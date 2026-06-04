@@ -78,6 +78,8 @@ public sealed class HudConfiguration : IPluginConfiguration
     public float MinimapBorderThickness { get; set; } = MinimapLayout.DefaultBorderThickness;
     public uint MinimapBorderColor { get; set; } = MinimapLayout.DefaultBorderColor;
     public bool MinimapShowNativeMarkers { get; set; } = true;
+    public bool MinimapShowDiagnostics { get; set; }
+    public float MinimapMarkerIconSize { get; set; } = MinimapLayout.DefaultMarkerIconSize;
 
     public uint ColorHpFill { get; set; } = 0xFF4AB34A;
     public uint ColorHpBack { get; set; } = 0x40202020;
@@ -482,6 +484,24 @@ public sealed class HudConfiguration : IPluginConfiguration
         {
             this.MinimapShowNativeMarkers = true;
             this.Version = 48;
+            this.Save();
+        }
+
+        if (this.Version < 49)
+        {
+            this.MinimapShowDiagnostics = false;
+            this.Version = 49;
+            this.Save();
+        }
+
+        if (this.Version < 51)
+        {
+            if (this.MinimapMarkerIconSize < MinimapLayout.MinMarkerIconSize)
+            {
+                this.MinimapMarkerIconSize = MinimapLayout.DefaultMarkerIconSize;
+            }
+
+            this.Version = 51;
             this.Save();
         }
 

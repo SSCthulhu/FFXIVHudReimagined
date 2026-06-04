@@ -10,14 +10,16 @@ public sealed class ConfigWindow
     private const float PresetButtonHeight = 36f;
 
     private readonly HudConfiguration config;
+    private readonly HudStateProvider? stateProvider;
     private string customLayoutNameBuffer = string.Empty;
     private int selectedCustomLayoutIndex = -1;
     private string pendingDeleteCustomLayoutName = string.Empty;
     private ConfigSettingsTab selectedTab = ConfigSettingsTab.General;
 
-    public ConfigWindow(HudConfiguration config)
+    public ConfigWindow(HudConfiguration config, HudStateProvider? stateProvider = null)
     {
         this.config = config;
+        this.stateProvider = stateProvider;
         this.SyncCustomLayoutSelectionIndex();
     }
 
@@ -521,14 +523,9 @@ public sealed class ConfigWindow
     private void DrawMinimapSettingsTab()
     {
         ImGui.TextUnformatted("Minimap Settings");
-        var buildVersion = typeof(Plugin).Assembly.GetName().Version;
-        ImGui.TextColored(
-            0xFF6B9E6B,
-            buildVersion is null
-                ? "Loaded build: unknown (use /xlreload after rebuilding Debug)"
-                : $"Loaded build: {buildVersion} — reload plugin after `dotnet build -c Debug`");
         ImGui.Spacing();
 
+        ImGui.TextUnformatted("General");
         var minimapEnabled = this.config.MinimapEnabled;
         if (ImGui.Checkbox("Minimap Enabled", ref minimapEnabled))
         {
@@ -536,7 +533,7 @@ public sealed class ConfigWindow
             this.config.Save();
         }
 
-        ImGui.TextColored(0xFF9AA1AB, "Draws a custom minimap (AgentMap texture). Hides the game's _NaviMap while enabled.");
+        ImGui.TextColored(0xFF9AA1AB, "Custom minimap using the zone map texture. Hides the game's _NaviMap while enabled.");
 
         var squareMinimap = this.config.MinimapSquare;
         if (ImGui.Checkbox("Square Minimap", ref squareMinimap))
@@ -552,23 +549,39 @@ public sealed class ConfigWindow
             this.config.Save();
         }
 
+        ImGui.TextColored(0xFF9AA1AB, "North stays at the top; the facing cone follows your camera. Syncs the game's compass lock.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Map Markers");
+        ImGui.TextColored(0xFF9AA1AB, "Quest pins, shops, and other icons from the game's minimap marker list.");
+
         var showNativeMarkers = this.config.MinimapShowNativeMarkers;
-        if (ImGui.Checkbox("Show Map Markers (step 1)", ref showNativeMarkers))
+        if (ImGui.Checkbox("Show Map Markers", ref showNativeMarkers))
         {
             this.config.MinimapShowNativeMarkers = showNativeMarkers;
             this.config.Save();
         }
 
-        ImGui.TextColored(0xFF9AA1AB, "Keeps north at the top. The facing cone follows your camera view on the map.");
-        ImGui.TextColored(0xFF9AA1AB, "Also updates the game's minimap compass lock while the custom minimap is enabled.");
-        ImGui.TextColored(0xFF9AA1AB, "Square or circle frame with a customizable border. Party members show as blue dots.");
-        ImGui.TextColored(0xFF9AA1AB, "Map markers (step 1): quest pins, shops, etc. from the game's native minimap list only.");
+        var markerIconSize = this.config.MinimapMarkerIconSize;
+        if (DrawPreciseFloat(
+                "Map Marker Icon Size",
+                ref markerIconSize,
+                MinimapLayout.MinMarkerIconSize,
+                MinimapLayout.MaxMarkerIconSize,
+                "%.0f",
+                1f))
+        {
+            this.config.MinimapMarkerIconSize = MinimapLayout.ClampMarkerIconSize(markerIconSize);
+            this.config.Save();
+        }
 
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
         ImGui.TextUnformatted("Layout");
-        ImGui.TextColored(0xFF9AA1AB, "Zoom: lower = closer view, higher = more territory (yalms from center to edge).");
+        ImGui.TextColored(0xFF9AA1AB, "Zoom (yalms): lower = closer view, higher = more territory. Map and markers use the same range.");
 
         var minimapOffsetBounds = MinimapLayout.GetOffsetBounds(
             ImGui.GetMainViewport().Size,
@@ -678,6 +691,73 @@ public sealed class ConfigWindow
             this.config.MinimapFacingConeOpacity = MinimapLayout.ClampFacingConeOpacity(facingConeOpacity);
             this.config.Save();
         }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        this.DrawMinimapTroubleshootingSection();
+    }
+
+    private void DrawMinimapTroubleshootingSection()
+    {
+        ImGui.TextUnformatted("Troubleshooting");
+        var buildVersion = typeof(Plugin).Assembly.GetName().Version;
+        ImGui.TextColored(
+            0xFF6B9E6B,
+            buildVersion is null
+                ? "Loaded build: unknown"
+                : $"Loaded build: {buildVersion}");
+
+        var showDiagnostics = this.config.MinimapShowDiagnostics;
+        if (ImGui.Checkbox("Enable minimap diagnostics", ref showDiagnostics))
+        {
+            this.config.MinimapShowDiagnostics = showDiagnostics;
+            this.config.Save();
+        }
+
+        ImGui.TextColored(
+            0xFF9AA1AB,
+            "Leave off during normal play. Turn on to capture a report when map or markers misbehave in a zone.");
+
+        if (!this.config.MinimapShowDiagnostics)
+        {
+            return;
+        }
+
+        this.DrawMinimapDiagnosticsPanel();
+    }
+
+    private void DrawMinimapDiagnosticsPanel()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(
+            0xFF9AA1AB,
+            "Stand in the problem zone with the minimap enabled, then copy the report below.");
+
+        if (this.stateProvider is null)
+        {
+            ImGui.TextColored(0xFFFF8080, "Diagnostics unavailable (not in game).");
+            return;
+        }
+
+        var report = this.stateProvider.MinimapDiagnostics.Text;
+        if (string.IsNullOrWhiteSpace(report))
+        {
+            ImGui.TextColored(0xFFFFCC80, "Waiting for HUD update… move slightly or wait one frame.");
+            return;
+        }
+
+        if (ImGui.Button("Copy diagnostics to clipboard"))
+        {
+            ImGui.SetClipboardText(report);
+        }
+
+        ImGui.SameLine();
+        ImGui.TextColored(0xFF9AA1AB, "Paste into Discord, GitHub, or a text file.");
+
+        ImGui.BeginChild("MinimapDiagnosticsScroll", new Vector2(0f, 220f), true);
+        ImGui.TextUnformatted(report);
+        ImGui.EndChild();
     }
 
     private void DrawBuffDebuffSettingsTab()

@@ -63,4 +63,5 @@ public sealed class MinimapSnapshot
     public float NativeMapImageScaleY { get; init; } = 1f;
     public bool NativeNorthLockedUp { get; init; }
     public float NativePlayerConeRotation { get; init; }
+    public float VisibleRangeYalms { get; init; }
 }

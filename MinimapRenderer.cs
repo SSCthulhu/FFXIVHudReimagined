@@ -38,8 +38,10 @@ public static class MinimapRenderer
         var northLocked = config.MinimapNorthLocked;
         var frame = ResolveMapFrameTransform(northLocked, snapshot);
         var circular = !config.MinimapSquare;
-        var visibleRange = MinimapLayout.ClampVisibleRange(config.MinimapVisibleRangeYalms);
-        var pixelsPerYalm = (contentHalf * 0.86f) / visibleRange;
+        var visibleRange = snapshot.VisibleRangeYalms > 0f
+            ? snapshot.VisibleRangeYalms
+            : MinimapLayout.ClampVisibleRange(config.MinimapVisibleRangeYalms);
+        var pixelsPerYalm = (contentHalf * 0.86f) / Math.Max(visibleRange, 1f);
         var frameCorners = BuildFrameCorners(center, contentHalf, frame);
 
         var hasMap = DrawMapBackground(draw, center, contentHalf, snapshot, frame, alpha, circular);
@@ -125,13 +127,15 @@ public static class MinimapRenderer
             return false;
         }
 
-        if (!snapshot.MapTexture.TryGetWrap(out var wrap, out _) || wrap.Handle == 0 || wrap.Width <= 0 || wrap.Height <= 0)
+        if (!MinimapTextureUtil.IsDrawable(snapshot.MapTexture))
         {
-            wrap = snapshot.MapTexture.GetWrapOrDefault();
-            if (wrap.Handle == 0 || wrap.Width <= 0 || wrap.Height <= 0)
-            {
-                return false;
-            }
+            return false;
+        }
+
+        var wrap = snapshot.MapTexture!.GetWrapOrEmpty();
+        if (wrap.Handle == 0 || wrap.Width <= 0 || wrap.Height <= 0)
+        {
+            return false;
         }
 
         var uvMin = snapshot.MapUvMin;
@@ -319,18 +323,13 @@ public static class MinimapRenderer
                 continue;
             }
 
-            var screenOffset = marker.UsesNativeScreenOffset
-                ? marker.ScreenOffset
-                : MinimapMapMath.MapTextureDeltaToScreenOffset(
-                    marker.MapTextureDelta,
-                    snapshot.MapUvMin,
-                    snapshot.MapUvMax,
-                    contentHalf);
-            if (!marker.UsesNativeScreenOffset && !northLocked)
+            var screenOffset = marker.ScreenOffset;
+            if (!northLocked)
             {
                 screenOffset = TransformMapLocalOffset(screenOffset, frame);
             }
 
+            // Texture-space offsets: +Y is ImGui-down, matching the map UV quad (unlike party blips).
             var pos = center + screenOffset;
             if (square && !IsInsideSquare(pos, center, clipRadius))
             {
@@ -398,6 +397,93 @@ public static class MinimapRenderer
         float facingConeSizeScale,
         float facingConeOpacity)
     {
+        if (TryDrawNativePlayerIndicator(
+                draw,
+                center,
+                contentHalf,
+                snapshot.PlayerIndicator,
+                northLocked,
+                alpha,
+                facingConeSizeScale,
+                facingConeOpacity))
+        {
+            return;
+        }
+
+        DrawFallbackPlayerIndicator(
+            draw,
+            center,
+            contentHalf,
+            snapshot,
+            northLocked,
+            alpha,
+            facingConeSizeScale,
+            facingConeOpacity);
+    }
+
+    private static bool TryDrawNativePlayerIndicator(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float contentHalf,
+        MinimapPlayerIndicatorAssets indicator,
+        bool northLocked,
+        float alpha,
+        float facingConeSizeScale,
+        float facingConeOpacity)
+    {
+        if (!indicator.IsValid ||
+            !MinimapTextureUtil.IsDrawable(indicator.ConeTexture) ||
+            !MinimapTextureUtil.IsDrawable(indicator.PinTexture))
+        {
+            return false;
+        }
+
+        var nativeMapSize = indicator.NativeMapSize > 1f ? indicator.NativeMapSize : 200f;
+        var scale = (contentHalf * 2f) / nativeMapSize;
+        var coneHalf = indicator.ConeSize * scale * facingConeSizeScale * 0.5f;
+        var pinHalf = indicator.PinSize * scale * 0.5f;
+        if (coneHalf.X < 0.5f || coneHalf.Y < 0.5f || pinHalf.X < 0.5f || pinHalf.Y < 0.5f)
+        {
+            return false;
+        }
+
+        var coneRotation = northLocked ? indicator.NativeConeRotation : 0f;
+        var pinRotation = northLocked ? indicator.NativePinRotation : 0f;
+        var tint = ApplyAlpha(0xFFFFFFFF, alpha);
+
+        DrawRotatedImage(
+            draw,
+            indicator.ConeTexture!.GetWrapOrEmpty().Handle,
+            center,
+            coneHalf,
+            coneRotation,
+            indicator.ConeUvMin,
+            indicator.ConeUvMax,
+            ApplyAlpha(0xFFFFFFFF, alpha * facingConeOpacity));
+
+        DrawRotatedImage(
+            draw,
+            indicator.PinTexture!.GetWrapOrEmpty().Handle,
+            center,
+            pinHalf,
+            pinRotation,
+            indicator.PinUvMin,
+            indicator.PinUvMax,
+            tint);
+
+        return true;
+    }
+
+    private static void DrawFallbackPlayerIndicator(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float contentHalf,
+        MinimapSnapshot snapshot,
+        bool northLocked,
+        float alpha,
+        float facingConeSizeScale,
+        float facingConeOpacity)
+    {
         var pinColor = ApplyAlpha(0xFF2F9BFF, alpha);
         var outlineColor = ApplyAlpha(0xFF0E1E2E, alpha);
         const float pinRadius = 7.5f;
@@ -412,6 +498,53 @@ public static class MinimapRenderer
 
         draw.AddCircleFilled(center, pinRadius + 1.2f, outlineColor);
         draw.AddCircleFilled(center, pinRadius, pinColor);
+    }
+
+    private static void DrawRotatedImage(
+        ImDrawListPtr draw,
+        ImTextureID texture,
+        Vector2 center,
+        Vector2 halfSize,
+        float rotation,
+        Vector2 uvMin,
+        Vector2 uvMax,
+        uint tint)
+    {
+        if (texture.Handle == 0)
+        {
+            return;
+        }
+
+        var cos = MathF.Cos(rotation);
+        var sin = MathF.Sin(rotation);
+        var corners = new Vector2[4];
+        var localCorners = new[]
+        {
+            new Vector2(-halfSize.X, -halfSize.Y),
+            new Vector2(halfSize.X, -halfSize.Y),
+            new Vector2(halfSize.X, halfSize.Y),
+            new Vector2(-halfSize.X, halfSize.Y),
+        };
+
+        for (var i = 0; i < 4; i++)
+        {
+            var local = localCorners[i];
+            corners[i] = center + new Vector2(
+                (local.X * cos) - (local.Y * sin),
+                (local.X * sin) + (local.Y * cos));
+        }
+
+        draw.AddImageQuad(
+            texture,
+            corners[0],
+            corners[1],
+            corners[2],
+            corners[3],
+            new Vector2(uvMin.X, uvMin.Y),
+            new Vector2(uvMax.X, uvMin.Y),
+            new Vector2(uvMax.X, uvMax.Y),
+            new Vector2(uvMin.X, uvMax.Y),
+            tint);
     }
 
     private static void DrawFacingCone(

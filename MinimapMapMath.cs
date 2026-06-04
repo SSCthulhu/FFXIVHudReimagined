@@ -64,6 +64,12 @@ public static class MinimapMapMath
         new(Math.Clamp(uv.X, 0f, 1f), Math.Clamp(uv.Y, 0f, 1f));
 
     /// <summary>
+    /// Pixels per yalm on the minimap image, matching the active UV window (contentHalf radius = visibleRange yalms).
+    /// </summary>
+    public static float GetMapPixelsPerYalm(float contentHalf, float visibleRangeYalms) =>
+        contentHalf / Math.Max(visibleRangeYalms, 1f);
+
+    /// <summary>
     /// Converts a delta on the 2048×2048 map texture into minimap screen pixels (ImGui Y-down).
     /// Uses the active UV window so markers stay aligned with the scrolling map.
     /// </summary>
@@ -81,7 +87,7 @@ public static class MinimapMapMath
 
         var scaleX = contentHalf / halfSpanPixels.X;
         var scaleY = contentHalf / halfSpanPixels.Y;
-        return new Vector2(mapTextureDelta.X * scaleX, -(mapTextureDelta.Y * scaleY));
+        return new Vector2(mapTextureDelta.X * scaleX, mapTextureDelta.Y * scaleY);
     }
 
     public static Vector2 GetVisibleMapHalfSpanPixels(Vector2 mapUvMin, Vector2 mapUvMax) =>

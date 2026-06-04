@@ -14,27 +14,36 @@ public sealed class MinimapStateProvider
     private readonly IPartyList partyList;
     private readonly IDataManager dataManager;
     private readonly IClientState clientState;
+    private readonly HudConfiguration configuration;
     private readonly MinimapMapTextureCache mapTextureCache;
     private readonly MinimapPlayerIndicatorCache playerIndicatorCache;
     private readonly MinimapMarkerIconCache markerIconCache;
+
+    public MinimapDiagnosticReport LatestDiagnostics { get; private set; } = new();
 
     public MinimapStateProvider(
         IObjectTable objectTable,
         IPartyList partyList,
         IDataManager dataManager,
         IClientState clientState,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        HudConfiguration configuration)
     {
         this.objectTable = objectTable;
         this.partyList = partyList;
         this.dataManager = dataManager;
         this.clientState = clientState;
-        this.mapTextureCache = new MinimapMapTextureCache(textureProvider);
+        this.configuration = configuration;
+        this.mapTextureCache = new MinimapMapTextureCache(textureProvider, dataManager);
         this.playerIndicatorCache = new MinimapPlayerIndicatorCache(textureProvider);
         this.markerIconCache = new MinimapMarkerIconCache(textureProvider);
     }
 
-    public MinimapSnapshot Build(float visibleRangeYalms, bool showNativeMarkers, float minimapSize)
+    public MinimapSnapshot Build(
+        float visibleRangeYalms,
+        bool showNativeMarkers,
+        float minimapSize,
+        float markerIconSize)
     {
         var player = this.objectTable.LocalPlayer;
         if (player is null)
@@ -47,38 +56,40 @@ public sealed class MinimapStateProvider
         var iconMarkers = new List<MinimapIconMarker>(MinimapLayout.MaxNativeMarkersPerFrame);
         this.AddPartyBlips(player, range, blips);
 
-        var hasMapTexture = this.mapTextureCache.TryGetCurrentMapTexture(out var mapTexture);
+        var hasMapTexture = this.mapTextureCache.TryGetCurrentMapTexture(out var mapTexture) &&
+                            MinimapTextureUtil.IsDrawable(mapTexture);
         var mapUvMin = Vector2.Zero;
         var mapUvMax = Vector2.One;
         var hasMapTransform = this.TryResolveMapTransform(out var offsetX, out var offsetY, out var sizeFactor);
-        if (showNativeMarkers)
-        {
-            this.markerIconCache.BeginFrame();
-            var contentHalf = MinimapLayout.ClampSize(minimapSize) * 0.5f;
-            if (!MinimapNaviMapMarkers.TryCollect(contentHalf, this.markerIconCache, iconMarkers) &&
-                hasMapTransform)
-            {
-                MinimapNativeMarkers.TryCollect(
-                    player.Position,
-                    range,
-                    offsetX,
-                    offsetY,
-                    sizeFactor,
-                    this.markerIconCache,
-                    iconMarkers);
-            }
-        }
-
-        if (hasMapTexture && !this.TryGetVisibleMapUvWindow(player, range, out mapUvMin, out mapUvMax))
+        if (hasMapTexture && hasMapTransform &&
+            !this.TryGetVisibleMapUvWindow(player, range, out mapUvMin, out mapUvMax))
         {
             mapUvMin = new Vector2(0.45f, 0.45f);
             mapUvMax = new Vector2(0.55f, 0.55f);
         }
 
+        if (showNativeMarkers && hasMapTransform)
+        {
+            this.markerIconCache.BeginFrame();
+            var contentHalf = MinimapLayout.ClampSize(minimapSize) * 0.5f;
+            MinimapNaviMapMarkers.TryCollect(
+                contentHalf,
+                mapUvMin,
+                mapUvMax,
+                player.Position,
+                offsetX,
+                offsetY,
+                sizeFactor,
+                range,
+                MinimapLayout.ClampMarkerIconSize(markerIconSize),
+                this.markerIconCache,
+                iconMarkers);
+        }
+
         var hasNativeMapFrame = MinimapNativeFrame.TryGetMapImageTransform(out var nativeFrame);
         var hasCameraMapYaw = MinimapCameraHeading.TryGetMapYaw(out var cameraMapYaw);
 
-        return new MinimapSnapshot
+        var snapshot = new MinimapSnapshot
         {
             IsActive = true,
             PlayerYaw = player.Rotation,
@@ -98,7 +109,21 @@ public sealed class MinimapStateProvider
             NativeMapImageScaleY = nativeFrame.ScaleY,
             NativeNorthLockedUp = nativeFrame.NorthLockedUp,
             NativePlayerConeRotation = nativeFrame.PlayerConeRotation,
+            VisibleRangeYalms = range,
         };
+
+        if (this.configuration.MinimapShowDiagnostics)
+        {
+            this.LatestDiagnostics = MinimapDiagnostics.Capture(
+                this.configuration,
+                this.clientState,
+                this.objectTable,
+                this.dataManager,
+                this.mapTextureCache,
+                snapshot);
+        }
+
+        return snapshot;
     }
 
     private bool TryGetVisibleMapUvWindow(ICharacter player, float visibleRangeYalms, out Vector2 uvMin, out Vector2 uvMax)

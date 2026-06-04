@@ -87,12 +87,15 @@ public sealed class HudStateProvider
             partyList,
             dataManager,
             clientState,
-            textureProvider);
+            textureProvider,
+            configuration);
         this.actionTransientSheet = this.dataManager.GetExcelSheet<ActionTransient>();
         this.LoadCapturedSquadronCommandsFromConfig();
     }
 
     public HudStateSnapshot Snapshot => this.snapshot;
+
+    public MinimapDiagnosticReport MinimapDiagnostics => this.minimapStateProvider.LatestDiagnostics;
 
     public unsafe bool TryExecuteHotbarSlot(int barIndex, int gameSlotIndex)
     {
@@ -491,7 +494,8 @@ public sealed class HudStateProvider
                     ? this.minimapStateProvider.Build(
                         this.configuration.MinimapVisibleRangeYalms,
                         this.configuration.MinimapShowNativeMarkers,
-                        this.configuration.MinimapSize)
+                        this.configuration.MinimapSize,
+                        this.configuration.MinimapMarkerIconSize)
                     : MinimapSnapshot.Empty,
             };
         }

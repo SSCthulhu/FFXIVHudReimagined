@@ -1,34 +1,116 @@
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Lumina.Excel.Sheets;
 
 namespace FFXIVHudPlugin;
 
 public sealed class MinimapMapTextureCache
 {
     private readonly ITextureProvider textureProvider;
+    private readonly IDataManager dataManager;
     private string cachedTexturePath = string.Empty;
     private ISharedImmediateTexture? cachedTexture;
+    private readonly List<string> lastCandidatePaths = new(32);
 
-    public MinimapMapTextureCache(ITextureProvider textureProvider)
+    public string LastLoadedPath { get; private set; } = string.Empty;
+    public string LastLoadNote { get; private set; } = string.Empty;
+
+    public MinimapMapTextureCache(ITextureProvider textureProvider, IDataManager dataManager)
     {
         this.textureProvider = textureProvider;
+        this.dataManager = dataManager;
     }
+
+    public IReadOnlyList<string> GetLastCandidatePaths(int maxCount) =>
+        this.lastCandidatePaths.Take(Math.Max(maxCount, 0)).ToList();
 
     public unsafe bool TryGetCurrentMapTexture(out ISharedImmediateTexture? texture)
     {
         texture = null;
-        foreach (var candidate in EnumeratePathCandidates(ResolveCurrentMapTexturePath()))
+        this.lastCandidatePaths.Clear();
+        this.LastLoadedPath = string.Empty;
+        this.LastLoadNote = "No path produced a drawable texture.";
+
+        if (MinimapNativeMapTexture.TryGetMapImagePath(out var nativeMapPath, out _) &&
+            this.TryLoadPath(nativeMapPath, "Loaded from _NaviMap MapImage.", out texture))
         {
-            if (this.TryGetLoadedTexture(candidate, out texture))
+            return true;
+        }
+
+        var agentMap = AgentMap.Instance();
+        var mapRowId = ResolveMapRowId(agentMap);
+        Map? mapRow = null;
+        if (mapRowId != 0)
+        {
+            var sheet = this.dataManager.GetExcelSheet<Map>();
+            if (sheet is not null && sheet.TryGetRow(mapRowId, out var row))
             {
+                mapRow = row;
+            }
+        }
+
+        ISharedImmediateTexture? maskFallback = null;
+        var maskFallbackPath = string.Empty;
+
+        foreach (var candidate in MinimapMapPathResolver.BuildCandidates(mapRowId, mapRow, agentMap))
+        {
+            foreach (var path in EnumeratePathVariants(candidate))
+            {
+                this.lastCandidatePaths.Add(path);
+                if (!this.TryLoadPath(path, "Loaded from AgentMap/Lumina path.", out var loaded))
+                {
+                    continue;
+                }
+
+                if (MinimapMapPathResolver.IsMaskMapPath(path))
+                {
+                    maskFallback ??= loaded;
+                    maskFallbackPath = this.cachedTexturePath;
+                    continue;
+                }
+
+                texture = loaded;
                 return true;
             }
+        }
+
+        if (maskFallback is not null)
+        {
+            this.cachedTexturePath = maskFallbackPath;
+            this.cachedTexture = maskFallback;
+            texture = maskFallback;
+            this.LastLoadedPath = maskFallbackPath;
+            this.LastLoadNote = "Loaded mask texture (no base map found).";
+            return true;
         }
 
         this.cachedTexturePath = string.Empty;
         this.cachedTexture = null;
         return false;
+    }
+
+    private bool TryLoadPath(string path, string successNote, out ISharedImmediateTexture? texture)
+    {
+        texture = null;
+        if (!this.TryGetLoadedTexture(path, out texture))
+        {
+            return false;
+        }
+
+        this.LastLoadedPath = this.cachedTexturePath;
+        this.LastLoadNote = successNote;
+        return true;
+    }
+
+    private static unsafe uint ResolveMapRowId(AgentMap* agentMap)
+    {
+        if (agentMap is not null && agentMap->CurrentMapId != 0)
+        {
+            return agentMap->CurrentMapId;
+        }
+
+        return 0;
     }
 
     private bool TryGetLoadedTexture(string path, out ISharedImmediateTexture? texture)
@@ -39,10 +121,16 @@ public sealed class MinimapMapTextureCache
             return false;
         }
 
-        if (!string.Equals(this.cachedTexturePath, path, StringComparison.Ordinal))
+        var normalized = NormalizeGamePath(path);
+        if (normalized.Length == 0)
         {
-            this.cachedTexturePath = path;
-            this.cachedTexture = this.textureProvider.GetFromGame(path);
+            return false;
+        }
+
+        if (!string.Equals(this.cachedTexturePath, normalized, StringComparison.Ordinal))
+        {
+            this.cachedTexturePath = normalized;
+            this.cachedTexture = this.textureProvider.GetFromGame(normalized);
         }
 
         if (this.cachedTexture is null)
@@ -59,7 +147,7 @@ public sealed class MinimapMapTextureCache
         return true;
     }
 
-    private unsafe static IEnumerable<string> EnumeratePathCandidates(string rawPath)
+    private static IEnumerable<string> EnumeratePathVariants(string rawPath)
     {
         if (string.IsNullOrWhiteSpace(rawPath))
         {
@@ -84,29 +172,6 @@ public sealed class MinimapMapTextureCache
         {
             yield return "ui/" + normalized.TrimStart('/');
         }
-    }
-
-    private unsafe static string ResolveCurrentMapTexturePath()
-    {
-        var agentMap = AgentMap.Instance();
-        if (agentMap is null)
-        {
-            return string.Empty;
-        }
-
-        var backgroundPath = agentMap->CurrentMapBgPath.ToString();
-        if (!string.IsNullOrWhiteSpace(backgroundPath))
-        {
-            return backgroundPath;
-        }
-
-        var selectedBackgroundPath = agentMap->SelectedMapBgPath.ToString();
-        if (!string.IsNullOrWhiteSpace(selectedBackgroundPath))
-        {
-            return selectedBackgroundPath;
-        }
-
-        return agentMap->CurrentMapPath.ToString();
     }
 
     private static string NormalizeGamePath(string path)

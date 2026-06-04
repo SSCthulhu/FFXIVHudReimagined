@@ -75,7 +75,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             clientState,
             this.configuration);
         this.hudWindow = new HudWindow(this.configuration, this.stateProvider);
-        this.configWindow = new ConfigWindow(this.configuration);
+        this.configWindow = new ConfigWindow(this.configuration, this.stateProvider);
 
         this.commandManager.AddHandler(PluginCommands.MainCommand, PluginCommands.CreateCommand(this.ToggleConfig));
 

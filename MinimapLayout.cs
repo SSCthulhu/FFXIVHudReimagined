@@ -24,7 +24,9 @@ public static class MinimapLayout
 
     public const int MaxNativeMarkersPerFrame = 64;
     public const int MaxNativeMarkerIconLoadsPerFrame = 24;
-    public const float NativeMarkerIconSize = 20f;
+    public const float DefaultMarkerIconSize = 20f;
+    public const float MinMarkerIconSize = 20f;
+    public const float MaxMarkerIconSize = 80f;
 
     public static float ClampSize(float size) => Math.Clamp(size, MinSize, MaxSize);
 
@@ -38,6 +40,9 @@ public static class MinimapLayout
 
     public static float ClampBorderThickness(float thickness) =>
         Math.Clamp(thickness, MinBorderThickness, MaxBorderThickness);
+
+    public static float ClampMarkerIconSize(float size) =>
+        Math.Clamp(size, MinMarkerIconSize, MaxMarkerIconSize);
 
     /// <summary>
     /// Minimap center offsets from screen center. Wider than generic HUD bounds so the map can sit near screen edges.
