@@ -4,16 +4,11 @@ using System.Numerics;
 namespace FFXIVHudPlugin;
 
 /// <summary>
-/// Draws markers from <see cref="AgentMap.MiniMapMarkers"/> using map-texture deltas
-/// converted through the same UV window as the scrolling minimap image.
+/// Short-lived map highlights from <see cref="AgentMap.TempMapMarkers"/> (e.g. gathering node callouts).
 /// </summary>
-internal static class MinimapNaviMapMarkers
+internal static class MinimapTempMapMarkers
 {
-    private const uint PlayerMarkerIconId = 60443;
-
-    public static unsafe bool IsAddonLoaded() => AgentMap.Instance() is not null;
-
-    public static int TryCollect(
+    public static unsafe int TryCollect(
         float contentHalf,
         Vector2 mapUvMin,
         Vector2 mapUvMax,
@@ -69,19 +64,19 @@ internal static class MinimapNaviMapMarkers
         int maxMarkers)
     {
         var agentMap = AgentMap.Instance();
-        if (agentMap is null || agentMap->CurrentMapId == 0)
+        if (agentMap is null || agentMap->CurrentMapId == 0 || agentMap->TempMapMarkerCount == 0)
         {
             return 0;
         }
 
-        var markerCount = Math.Min(agentMap->MiniMapMarkerCount, agentMap->MiniMapMarkers.Length);
+        var markerCount = Math.Min(agentMap->TempMapMarkerCount, agentMap->TempMapMarkers.Length);
         var collected = 0;
 
         for (var i = 0; i < markerCount && markers.Count < maxMarkers; i++)
         {
-            ref readonly var entry = ref agentMap->MiniMapMarkers[i];
+            ref readonly var entry = ref agentMap->TempMapMarkers[i];
             var iconId = entry.MapMarker.IconId;
-            if (iconId == 0 || iconId == PlayerMarkerIconId)
+            if (iconId == 0)
             {
                 continue;
             }

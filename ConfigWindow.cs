@@ -24,6 +24,7 @@ public sealed class ConfigWindow
     }
 
     public bool IsOpen { get; set; }
+    public void SelectMinimapTab() => this.selectedTab = ConfigSettingsTab.Minimap;
 
     public void Draw()
     {
@@ -34,26 +35,43 @@ public sealed class ConfigWindow
 
         var isOpen = this.IsOpen;
         ImGui.SetNextWindowSize(new Vector2(816f, 560f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("FFXIV Hud Reimagined Config", ref isOpen))
+        var io = ImGui.GetIO();
+        var previousConfigFlags = io.ConfigFlags;
+        var previousMouseDrawCursor = io.MouseDrawCursor;
+        io.ConfigFlags |= ImGuiConfigFlags.NoMouseCursorChange;
+        io.MouseDrawCursor = true;
+        if (!ImGui.Begin(
+                "FFXIV Hud Reimagined Config",
+                ref isOpen,
+                ImGuiWindowFlags.NoNavInputs))
         {
             this.IsOpen = isOpen;
+            io.ConfigFlags = previousConfigFlags;
+            io.MouseDrawCursor = previousMouseDrawCursor;
             ImGui.End();
             return;
         }
 
         this.IsOpen = isOpen;
 
-        ImGui.BeginChild("##ConfigNavSidebar", new Vector2(NavSidebarWidth, 0f), true);
+        ImGui.BeginChild("##ConfigNavSidebar", new Vector2(NavSidebarWidth, 0f), false);
         this.DrawSettingsNavSidebar();
         ImGui.EndChild();
 
         ImGui.SameLine();
 
-        ImGui.BeginChild("##ConfigSettingsContent", new Vector2(0f, 0f), true);
+        ImGui.BeginChild("##ConfigSettingsContent", new Vector2(0f, 0f), false);
         this.DrawSelectedSettingsTab();
         ImGui.EndChild();
 
+        if (ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows))
+        {
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Arrow);
+        }
+
         ImGui.End();
+        io.ConfigFlags = previousConfigFlags;
+        io.MouseDrawCursor = previousMouseDrawCursor;
     }
 
     private void DrawSettingsNavSidebar()
@@ -142,21 +160,21 @@ public sealed class ConfigWindow
         ImGui.Spacing();
 
         var enabled = this.config.Enabled;
-        if (ImGui.Checkbox("Enabled", ref enabled))
+        if (DrawSettingCheckbox("Enabled", ref enabled))
         {
             this.config.Enabled = enabled;
             this.config.Save();
         }
 
         var statusTooltips = this.config.EnableStatusTooltips;
-        if (ImGui.Checkbox("Enable Tooltips", ref statusTooltips))
+        if (DrawSettingCheckbox("Enable Tooltips", ref statusTooltips))
         {
             this.config.EnableStatusTooltips = statusTooltips;
             this.config.Save();
         }
 
         var showSlidecast = this.config.ShowSlidecastMarker;
-        if (ImGui.Checkbox("Show Slidecast Marker", ref showSlidecast))
+        if (DrawSettingCheckbox("Show Slidecast Marker", ref showSlidecast))
         {
             this.config.ShowSlidecastMarker = showSlidecast;
             this.config.Save();
@@ -527,7 +545,7 @@ public sealed class ConfigWindow
 
         ImGui.TextUnformatted("General");
         var minimapEnabled = this.config.MinimapEnabled;
-        if (ImGui.Checkbox("Minimap Enabled", ref minimapEnabled))
+        if (DrawSettingCheckbox("Minimap Enabled", ref minimapEnabled))
         {
             this.config.MinimapEnabled = minimapEnabled;
             this.config.Save();
@@ -536,14 +554,14 @@ public sealed class ConfigWindow
         ImGui.TextColored(0xFF9AA1AB, "Custom minimap using the zone map texture. Hides the game's _NaviMap while enabled.");
 
         var squareMinimap = this.config.MinimapSquare;
-        if (ImGui.Checkbox("Square Minimap", ref squareMinimap))
+        if (DrawSettingCheckbox("Square Minimap", ref squareMinimap))
         {
             this.config.MinimapSquare = squareMinimap;
             this.config.Save();
         }
 
         var northLocked = this.config.MinimapNorthLocked;
-        if (ImGui.Checkbox("Lock North Up", ref northLocked))
+        if (DrawSettingCheckbox("Lock North Up", ref northLocked))
         {
             this.config.MinimapNorthLocked = northLocked;
             this.config.Save();
@@ -551,14 +569,25 @@ public sealed class ConfigWindow
 
         ImGui.TextColored(0xFF9AA1AB, "North stays at the top; the facing cone follows your camera. Syncs the game's compass lock.");
 
+        var showCardinalDirections = this.config.MinimapShowCardinalDirections;
+        if (DrawSettingCheckbox("Show Cardinal Directions", ref showCardinalDirections))
+        {
+            this.config.MinimapShowCardinalDirections = showCardinalDirections;
+            this.config.Save();
+        }
+
+        ImGui.TextColored(0xFF9AA1AB, "Shows N / E / S / W labels around the minimap edge.");
+
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
         ImGui.TextUnformatted("Map Markers");
-        ImGui.TextColored(0xFF9AA1AB, "Quest pins, shops, and other icons from the game's minimap marker list.");
+        ImGui.TextColored(
+            0xFF9AA1AB,
+            "Map flag, gathering, FATEs (FateManager), quest events, then minimap pins from AgentMap.");
 
         var showNativeMarkers = this.config.MinimapShowNativeMarkers;
-        if (ImGui.Checkbox("Show Map Markers", ref showNativeMarkers))
+        if (DrawSettingCheckbox("Show Map Markers", ref showNativeMarkers))
         {
             this.config.MinimapShowNativeMarkers = showNativeMarkers;
             this.config.Save();
@@ -663,6 +692,50 @@ public sealed class ConfigWindow
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
+        ImGui.TextUnformatted("Player Pin");
+        ImGui.TextColored(0xFF9AA1AB, "Teardrop at center: points where your character faces (cone still follows camera).");
+
+        var useRolePinColor = this.config.MinimapUseRolePinColor;
+        if (DrawSettingCheckbox("Use Role Color", ref useRolePinColor))
+        {
+            this.config.MinimapUseRolePinColor = useRolePinColor;
+            this.config.Save();
+        }
+
+        ImGui.TextColored(
+            0xFF9AA1AB,
+            "Tank, Healer, DPS, or Crafter/Gatherer — uses the official in-game role palette.");
+
+        var playerPinSize = this.config.MinimapPlayerPinSize;
+        if (DrawPreciseFloat(
+                "Player Pin Size",
+                ref playerPinSize,
+                MinimapLayout.MinPlayerPinSize,
+                MinimapLayout.MaxPlayerPinSize,
+                "%.1f",
+                0.5f))
+        {
+            this.config.MinimapPlayerPinSize = MinimapLayout.ClampPlayerPinSize(playerPinSize);
+            this.config.Save();
+        }
+
+        if (!this.config.MinimapUseRolePinColor)
+        {
+            var playerPinColor = this.config.MinimapPlayerPinColor;
+            if (this.DrawColorPicker("Player Pin Color", ref playerPinColor))
+            {
+                this.config.MinimapPlayerPinColor = playerPinColor;
+                this.config.Save();
+            }
+        }
+        else
+        {
+            ImGui.TextColored(0xFF9AA1AB, "Custom pin color is used only when role color cannot be resolved.");
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
         ImGui.TextUnformatted("Facing Cone");
         ImGui.TextColored(0xFF9AA1AB, "Orange wedge showing which way you are facing. Size is relative to the minimap radius.");
 
@@ -709,7 +782,7 @@ public sealed class ConfigWindow
                 : $"Loaded build: {buildVersion}");
 
         var showDiagnostics = this.config.MinimapShowDiagnostics;
-        if (ImGui.Checkbox("Enable minimap diagnostics", ref showDiagnostics))
+        if (DrawSettingCheckbox("Enable minimap diagnostics", ref showDiagnostics))
         {
             this.config.MinimapShowDiagnostics = showDiagnostics;
             this.config.Save();
@@ -767,7 +840,7 @@ public sealed class ConfigWindow
 
         ImGui.TextUnformatted("Testing");
         var showTestStatusEffects = this.config.ShowTestStatusEffects;
-        if (ImGui.Checkbox("Show Test Buffs & Debuffs (1 row each)", ref showTestStatusEffects))
+        if (DrawSettingCheckbox("Show Test Buffs & Debuffs (1 row each)", ref showTestStatusEffects))
         {
             this.config.ShowTestStatusEffects = showTestStatusEffects;
             this.config.Save();
@@ -1065,13 +1138,30 @@ public sealed class ConfigWindow
     private bool DrawColorPicker(string label, ref uint argbColor)
     {
         var color = HudColorConversion.ToVector4(argbColor);
-        if (!ImGui.ColorEdit4(label, ref color, ImGuiColorEditFlags.AlphaBar))
+        ImGui.PushID(label);
+        ImGui.AlignTextToFramePadding();
+        var changed = ImGui.ColorEdit4("##value", ref color, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.NoLabel);
+        ImGui.SameLine(0f, 6f);
+        ImGui.TextUnformatted(label);
+        ImGui.PopID();
+        if (!changed)
         {
             return false;
         }
 
         argbColor = HudColorConversion.ToImGuiColor(color);
         return true;
+    }
+
+    /// <summary>
+    /// Checkbox with a separate text label so the label does not fight the checkbox for hover (hand vs arrow flicker).
+    /// </summary>
+    private static bool DrawSettingCheckbox(string label, ref bool value)
+    {
+        ImGui.PushID(label);
+        var changed = ImGui.Checkbox(label, ref value);
+        ImGui.PopID();
+        return changed;
     }
 
     private static bool DrawPreciseFloat(
@@ -1082,49 +1172,46 @@ public sealed class ConfigWindow
         string format,
         float step = DefaultFloatStep)
     {
-        if (!ImGui.DragFloat(label, ref value, step, min, max, format))
+        ImGui.PushID(label);
+        ImGui.AlignTextToFramePadding();
+        ImGui.SetNextItemWidth(ImGui.CalcItemWidth() - ImGui.CalcTextSize(label).X - 12f);
+        if (!ImGui.DragFloat("##value", ref value, step, min, max, format))
         {
+            ImGui.PopID();
             return false;
         }
 
         value = SnapToStep(value, min, max, step);
+        ImGui.SameLine(0f, 6f);
+        ImGui.TextUnformatted(label);
+        ImGui.PopID();
         return true;
     }
 
     private static bool DrawPreciseInt(string label, ref int value, int min, int max)
     {
-        if (!ImGui.DragInt(label, ref value, 0.05f, min, max))
+        ImGui.PushID(label);
+        ImGui.AlignTextToFramePadding();
+        ImGui.SetNextItemWidth(ImGui.CalcItemWidth() - ImGui.CalcTextSize(label).X - 12f);
+        if (!ImGui.DragInt("##value", ref value, 0.05f, min, max))
         {
+            ImGui.PopID();
             return false;
         }
 
         value = Math.Clamp(value, min, max);
+        ImGui.SameLine(0f, 6f);
+        ImGui.TextUnformatted(label);
+        ImGui.PopID();
         return true;
     }
 
     private static bool DrawSectionHeaderWithEnable(string title, ref bool enabled)
     {
-        var changed = false;
-        if (!ImGui.BeginTable($"##Section_{title}", 2, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.NoSavedSettings))
-        {
-            return changed;
-        }
-
-        ImGui.TableSetupColumn("##Title", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Enable", ImGuiTableColumnFlags.WidthFixed, 92f);
-        ImGui.TableNextRow();
-        ImGui.TableNextColumn();
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted(title);
-        ImGui.TableNextColumn();
-        ImGui.AlignTextToFramePadding();
-        if (ImGui.Checkbox("Enabled", ref enabled))
-        {
-            changed = true;
-        }
-
-        ImGui.EndTable();
-        return changed;
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X - ImGui.GetFrameHeight() - 4f);
+        return ImGui.Checkbox($"##sectionEnabled_{title}", ref enabled);
     }
 
     private enum ConfigSettingsTab

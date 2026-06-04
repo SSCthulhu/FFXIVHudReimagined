@@ -4,14 +4,12 @@ using System.Numerics;
 namespace FFXIVHudPlugin;
 
 /// <summary>
-/// Draws markers from <see cref="AgentMap.MiniMapMarkers"/> using map-texture deltas
-/// converted through the same UV window as the scrolling minimap image.
+/// Map markers from <see cref="AgentMap.MapMarkers"/> (separate from MiniMapMarkers/EventMarkers).
+/// Some quest objectives and map-linked markers only appear in this container.
 /// </summary>
-internal static class MinimapNaviMapMarkers
+internal static class MinimapMapMarkers
 {
     private const uint PlayerMarkerIconId = 60443;
-
-    public static unsafe bool IsAddonLoaded() => AgentMap.Instance() is not null;
 
     public static int TryCollect(
         float contentHalf,
@@ -74,24 +72,41 @@ internal static class MinimapNaviMapMarkers
             return 0;
         }
 
-        var markerCount = Math.Min(agentMap->MiniMapMarkerCount, agentMap->MiniMapMarkers.Length);
+        var markerCount = Math.Min(agentMap->MapMarkerCount, agentMap->MapMarkers.Length);
+        if (markerCount <= 0)
+        {
+            return 0;
+        }
+
+        var seen = new HashSet<(uint IconId, int X, int Z)>();
         var collected = 0;
 
         for (var i = 0; i < markerCount && markers.Count < maxMarkers; i++)
         {
-            ref readonly var entry = ref agentMap->MiniMapMarkers[i];
+            ref readonly var entry = ref agentMap->MapMarkers[i];
             var iconId = entry.MapMarker.IconId;
             if (iconId == 0 || iconId == PlayerMarkerIconId)
             {
                 continue;
             }
 
-            var markerWorldX = entry.MapMarker.X / 16f;
-            var markerWorldZ = entry.MapMarker.Y / 16f;
+            var worldX = entry.MapMarker.X / 16f;
+            var worldZ = entry.MapMarker.Y / 16f;
+            if (!float.IsFinite(worldX) || !float.IsFinite(worldZ))
+            {
+                continue;
+            }
+
+            var cellX = (int)MathF.Round(worldX);
+            var cellZ = (int)MathF.Round(worldZ);
+            if (!seen.Add((iconId, cellX, cellZ)))
+            {
+                continue;
+            }
 
             if (MinimapMarkerPlacement.TryAddIconMarker(
-                    markerWorldX,
-                    markerWorldZ,
+                    worldX,
+                    worldZ,
                     iconId,
                     playerPosition,
                     offsetX,

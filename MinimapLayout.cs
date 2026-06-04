@@ -27,6 +27,10 @@ public static class MinimapLayout
     public const float DefaultMarkerIconSize = 20f;
     public const float MinMarkerIconSize = 20f;
     public const float MaxMarkerIconSize = 80f;
+    public const float DefaultPlayerPinSize = 12f;
+    public const float MinPlayerPinSize = 8f;
+    public const float MaxPlayerPinSize = 22f;
+    public const uint DefaultPlayerPinColor = 0xFFE87848;
 
     public static float ClampSize(float size) => Math.Clamp(size, MinSize, MaxSize);
 
@@ -43,6 +47,9 @@ public static class MinimapLayout
 
     public static float ClampMarkerIconSize(float size) =>
         Math.Clamp(size, MinMarkerIconSize, MaxMarkerIconSize);
+
+    public static float ClampPlayerPinSize(float size) =>
+        Math.Clamp(size, MinPlayerPinSize, MaxPlayerPinSize);
 
     /// <summary>
     /// Minimap center offsets from screen center. Wider than generic HUD bounds so the map can sit near screen edges.

@@ -7,7 +7,7 @@ namespace FFXIVHudPlugin;
 [Serializable]
 public sealed class HudConfiguration : IPluginConfiguration
 {
-    public int Version { get; set; } = 43;
+    public int Version { get; set; } = 55;
 
     public bool Enabled { get; set; } = true;
     public bool UnlockLayout { get; set; } = false;
@@ -78,8 +78,12 @@ public sealed class HudConfiguration : IPluginConfiguration
     public float MinimapBorderThickness { get; set; } = MinimapLayout.DefaultBorderThickness;
     public uint MinimapBorderColor { get; set; } = MinimapLayout.DefaultBorderColor;
     public bool MinimapShowNativeMarkers { get; set; } = true;
+    public bool MinimapShowCardinalDirections { get; set; }
     public bool MinimapShowDiagnostics { get; set; }
     public float MinimapMarkerIconSize { get; set; } = MinimapLayout.DefaultMarkerIconSize;
+    public float MinimapPlayerPinSize { get; set; } = MinimapLayout.DefaultPlayerPinSize;
+    public bool MinimapUseRolePinColor { get; set; } = true;
+    public uint MinimapPlayerPinColor { get; set; } = MinimapLayout.DefaultPlayerPinColor;
 
     public uint ColorHpFill { get; set; } = 0xFF4AB34A;
     public uint ColorHpBack { get; set; } = 0x40202020;
@@ -502,6 +506,41 @@ public sealed class HudConfiguration : IPluginConfiguration
             }
 
             this.Version = 51;
+            this.Save();
+        }
+
+        if (this.Version < 52)
+        {
+            if (this.MinimapPlayerPinSize < MinimapLayout.MinPlayerPinSize)
+            {
+                this.MinimapPlayerPinSize = MinimapLayout.DefaultPlayerPinSize;
+            }
+
+            if (this.MinimapPlayerPinColor == 0)
+            {
+                this.MinimapPlayerPinColor = MinimapLayout.DefaultPlayerPinColor;
+            }
+
+            this.Version = 52;
+            this.Save();
+        }
+
+        if (this.Version < 53)
+        {
+            this.Version = 53;
+            this.Save();
+        }
+
+        if (this.Version < 54)
+        {
+            this.Version = 54;
+            this.Save();
+        }
+
+        if (this.Version < 55)
+        {
+            this.MinimapShowCardinalDirections = false;
+            this.Version = 55;
             this.Save();
         }
 

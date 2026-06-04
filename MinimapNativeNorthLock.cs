@@ -28,6 +28,12 @@ internal static class MinimapNativeNorthLock
             naviMap.NorthLockedUp = northLocked;
         }
 
+        // Avoid touching native checkbox UI while _NaviMap is hidden — SetChecked can flash the addon visible.
+        if (!addon->IsVisible)
+        {
+            return;
+        }
+
         var lockNorthCheckbox = addon->LockNorthCheckbox;
         if (lockNorthCheckbox is not null && lockNorthCheckbox->IsChecked != northLocked)
         {

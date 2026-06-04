@@ -1,19 +1,22 @@
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Plugin.Services;
+using Lumina.Excel.Sheets;
 using System.Numerics;
 
 namespace FFXIVHudPlugin;
 
 /// <summary>
-/// Draws markers from <see cref="AgentMap.MiniMapMarkers"/> using map-texture deltas
-/// converted through the same UV window as the scrolling minimap image.
+/// Live gathering nodes from the object table (standing at / near an active node).
 /// </summary>
-internal static class MinimapNaviMapMarkers
+internal static class MinimapGatheringPointMarkers
 {
-    private const uint PlayerMarkerIconId = 60443;
-
-    public static unsafe bool IsAddonLoaded() => AgentMap.Instance() is not null;
+    private const int MaxGatheringPointsPerFrame = 24;
+    private const float PositionDedupeGridYalms = 3f;
 
     public static int TryCollect(
+        IObjectTable objectTable,
+        IDataManager dataManager,
         float contentHalf,
         Vector2 mapUvMin,
         Vector2 mapUvMax,
@@ -35,6 +38,8 @@ internal static class MinimapNaviMapMarkers
         try
         {
             return TryCollectCore(
+                objectTable,
+                dataManager,
                 contentHalf,
                 mapUvMin,
                 mapUvMax,
@@ -54,7 +59,9 @@ internal static class MinimapNaviMapMarkers
         }
     }
 
-    private static unsafe int TryCollectCore(
+    private static int TryCollectCore(
+        IObjectTable objectTable,
+        IDataManager dataManager,
         float contentHalf,
         Vector2 mapUvMin,
         Vector2 mapUvMax,
@@ -68,30 +75,53 @@ internal static class MinimapNaviMapMarkers
         List<MinimapIconMarker> markers,
         int maxMarkers)
     {
-        var agentMap = AgentMap.Instance();
-        if (agentMap is null || agentMap->CurrentMapId == 0)
+        var gatheringSheet = dataManager.GetExcelSheet<GatheringPoint>();
+        if (gatheringSheet is null)
         {
             return 0;
         }
 
-        var markerCount = Math.Min(agentMap->MiniMapMarkerCount, agentMap->MiniMapMarkers.Length);
         var collected = 0;
+        var seenCells = new HashSet<(int X, int Z)>();
+        var maxWorldDistance = visibleRangeYalms + 8f;
+        var maxWorldDistanceSq = maxWorldDistance * maxWorldDistance;
 
-        for (var i = 0; i < markerCount && markers.Count < maxMarkers; i++)
+        foreach (var obj in objectTable)
         {
-            ref readonly var entry = ref agentMap->MiniMapMarkers[i];
-            var iconId = entry.MapMarker.IconId;
-            if (iconId == 0 || iconId == PlayerMarkerIconId)
+            if (collected >= MaxGatheringPointsPerFrame || markers.Count >= maxMarkers)
+            {
+                break;
+            }
+
+            if (obj.ObjectKind != ObjectKind.GatheringPoint || !obj.IsTargetable)
             {
                 continue;
             }
 
-            var markerWorldX = entry.MapMarker.X / 16f;
-            var markerWorldZ = entry.MapMarker.Y / 16f;
+            var delta = obj.Position - playerPosition;
+            delta.Y = 0f;
+            if (delta.LengthSquared() > maxWorldDistanceSq)
+            {
+                continue;
+            }
+
+            var cellX = (int)MathF.Round(obj.Position.X / PositionDedupeGridYalms);
+            var cellZ = (int)MathF.Round(obj.Position.Z / PositionDedupeGridYalms);
+            if (!seenCells.Add((cellX, cellZ)))
+            {
+                continue;
+            }
+
+            var pointRow = gatheringSheet.GetRow(obj.BaseId);
+            var iconId = (uint)(pointRow.GatheringPointBase.ValueNullable?.GatheringType.ValueNullable?.IconMain ?? 0);
+            if (iconId == 0)
+            {
+                continue;
+            }
 
             if (MinimapMarkerPlacement.TryAddIconMarker(
-                    markerWorldX,
-                    markerWorldZ,
+                    obj.Position.X,
+                    obj.Position.Z,
                     iconId,
                     playerPosition,
                     offsetX,

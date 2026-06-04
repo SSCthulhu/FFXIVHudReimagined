@@ -5,9 +5,23 @@ namespace FFXIVHudPlugin;
 
 public readonly struct MinimapBlip
 {
-    public Vector2 LocalOffset { get; init; }
+    /// <summary>Offset from minimap center in screen pixels (map-texture aligned).</summary>
+    public Vector2 ScreenOffset { get; init; }
+    public MinimapBlipKind Kind { get; init; }
     public uint Color { get; init; }
     public float Radius { get; init; }
+}
+
+public enum MinimapBlipKind
+{
+    Party = 0,
+    Enemy = 1,
+}
+
+public readonly struct MinimapFateArea
+{
+    public Vector2 ScreenOffset { get; init; }
+    public float RadiusPixels { get; init; }
 }
 
 public readonly struct MinimapIconMarker
@@ -52,6 +66,7 @@ public sealed class MinimapSnapshot
     public string MapTitle { get; init; } = string.Empty;
     public IReadOnlyList<MinimapBlip> Blips { get; init; } = Array.Empty<MinimapBlip>();
     public IReadOnlyList<MinimapIconMarker> IconMarkers { get; init; } = Array.Empty<MinimapIconMarker>();
+    public IReadOnlyList<MinimapFateArea> FateAreas { get; init; } = Array.Empty<MinimapFateArea>();
     public ISharedImmediateTexture? MapTexture { get; init; }
     public Vector2 MapUvMin { get; init; }
     public Vector2 MapUvMax { get; init; }
@@ -64,4 +79,6 @@ public sealed class MinimapSnapshot
     public bool NativeNorthLockedUp { get; init; }
     public float NativePlayerConeRotation { get; init; }
     public float VisibleRangeYalms { get; init; }
+    public uint PlayerClassJobId { get; init; }
+    public uint PlayerPinFillColor { get; init; }
 }

@@ -4,16 +4,11 @@ using System.Numerics;
 namespace FFXIVHudPlugin;
 
 /// <summary>
-/// Draws markers from <see cref="AgentMap.MiniMapMarkers"/> using map-texture deltas
-/// converted through the same UV window as the scrolling minimap image.
+/// Zone-wide gathering category pins from <see cref="AgentMap.MiniMapGatheringMarkers"/> (up to 6 slots).
 /// </summary>
-internal static class MinimapNaviMapMarkers
+internal static class MinimapGatheringMarkers
 {
-    private const uint PlayerMarkerIconId = 60443;
-
-    public static unsafe bool IsAddonLoaded() => AgentMap.Instance() is not null;
-
-    public static int TryCollect(
+    public static unsafe int TryCollect(
         float contentHalf,
         Vector2 mapUvMin,
         Vector2 mapUvMax,
@@ -74,14 +69,16 @@ internal static class MinimapNaviMapMarkers
             return 0;
         }
 
-        var markerCount = Math.Min(agentMap->MiniMapMarkerCount, agentMap->MiniMapMarkers.Length);
         var collected = 0;
-
-        for (var i = 0; i < markerCount && markers.Count < maxMarkers; i++)
+        foreach (ref readonly var entry in agentMap->MiniMapGatheringMarkers)
         {
-            ref readonly var entry = ref agentMap->MiniMapMarkers[i];
+            if (markers.Count >= maxMarkers)
+            {
+                break;
+            }
+
             var iconId = entry.MapMarker.IconId;
-            if (iconId == 0 || iconId == PlayerMarkerIconId)
+            if (iconId == 0)
             {
                 continue;
             }

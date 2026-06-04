@@ -74,7 +74,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             condition,
             clientState,
             this.configuration);
-        this.hudWindow = new HudWindow(this.configuration, this.stateProvider);
+        this.hudWindow = new HudWindow(this.configuration, this.stateProvider, this.OpenMinimapConfig);
         this.configWindow = new ConfigWindow(this.configuration, this.stateProvider);
 
         this.commandManager.AddHandler(PluginCommands.MainCommand, PluginCommands.CreateCommand(this.ToggleConfig));
@@ -97,12 +97,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private void DrawUi()
     {
         this.ApplyNativeUiVisibility();
-        this.ApplyCustomMinimapVisibility();
+        this.ApplyMinimapNorthLockWhenCustom();
 
+        var configOpen = this.configWindow.IsOpen;
         if (this.ShouldDrawHud())
         {
             this.stateProvider.Update();
-            this.hudWindow.Draw();
+            this.hudWindow.Draw(configOpen);
         }
 
         this.configWindow.Draw();
@@ -143,6 +144,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.configWindow.IsOpen = !this.configWindow.IsOpen;
     }
 
+    private void OpenMinimapConfig()
+    {
+        this.configWindow.IsOpen = true;
+        this.configWindow.SelectMinimapTab();
+    }
+
     private void ToggleMainUi()
     {
         this.configuration.Enabled = !this.configuration.Enabled;
@@ -151,37 +158,50 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private void ApplyNativeUiVisibility()
     {
-        var shouldHide = this.clientState.IsLoggedIn &&
-                         this.objectTable.LocalPlayer is not null;
+        var inWorld = this.clientState.IsLoggedIn &&
+                      this.objectTable.LocalPlayer is not null;
 
-        if (shouldHide)
+        if (!inWorld)
         {
-            this.SetNativeUiVisibility(false);
-            this.nativeUiHiddenApplied = true;
+            if (this.nativeUiHiddenApplied)
+            {
+                this.SetNativeUiVisibility(true);
+                NativeMinimapVisibility.SetVisible(true);
+                this.nativeUiHiddenApplied = false;
+            }
+
             return;
         }
 
-        if (!this.nativeUiHiddenApplied)
+        if (!this.configuration.Enabled)
         {
+            if (!this.nativeUiHiddenApplied)
+            {
+                return;
+            }
+
+            this.SetNativeUiVisibility(true);
+            NativeMinimapVisibility.SetVisible(true);
+            this.nativeUiHiddenApplied = false;
             return;
         }
 
-        this.SetNativeUiVisibility(true);
-        this.nativeUiHiddenApplied = false;
+        this.SetNativeUiVisibility(false);
+        NativeMinimapVisibility.SetVisible(!this.configuration.MinimapEnabled);
+        this.nativeUiHiddenApplied = true;
     }
 
-    private void ApplyCustomMinimapVisibility()
+    private void ApplyMinimapNorthLockWhenCustom()
     {
-        var useCustomMinimap = this.clientState.IsLoggedIn &&
-                               this.objectTable.LocalPlayer is not null &&
-                               this.configuration.Enabled &&
-                               this.configuration.MinimapEnabled;
-        NativeMinimapVisibility.Apply(useCustomMinimap);
-
-        if (useCustomMinimap)
+        if (!this.clientState.IsLoggedIn ||
+            this.objectTable.LocalPlayer is null ||
+            !this.configuration.Enabled ||
+            !this.configuration.MinimapEnabled)
         {
-            MinimapNativeNorthLock.Apply(this.configuration.MinimapNorthLocked);
+            return;
         }
+
+        MinimapNativeNorthLock.Apply(this.configuration.MinimapNorthLocked);
     }
 
     private void SetNativeUiVisibility(bool visible)

@@ -20,6 +20,17 @@ public static class MinimapRenderer
     private const float BlipClipScale = 0.84f;
     internal const float BlipClipScaleForMarkers = BlipClipScale;
     private const int CircularMapSegments = 48;
+    private const int FateAreaSegments = 56;
+    private const uint FateAreaFillColor = 0x503878B8;
+    private const uint FateAreaRingColor = 0xFF5098E8;
+    private const float FateAreaFillAlphaScale = 0.32f;
+    private const float FateAreaRingThickness = 2f;
+    private const float PartyBlipOutlineThickness = 2f;
+    private const float MarkerCenterDotScale = 0.30f;
+    private const float MarkerCenterGlowScale = 0.50f;
+    private const int MarkerGlowRingCount = 7;
+    private const float CardinalTextScale = 1.35f;
+    private const uint NorthAccentColor = 0xFF4AA8FF;
 
     public static void Draw(
         ImDrawListPtr draw,
@@ -58,13 +69,16 @@ public static class MinimapRenderer
             frame,
             alpha,
             config.MinimapSquare);
+        if (config.MinimapShowCardinalDirections)
+        {
+            DrawCardinalDirections(draw, center, contentHalf * NorthRingRadiusScale, northLocked, frame, alpha);
+        }
         if (config.MinimapShowNativeMarkers)
         {
+            DrawFateAreas(draw, center, contentHalf, snapshot, frame, northLocked, alpha, config.MinimapSquare);
             DrawIconMarkers(draw, center, contentHalf, snapshot, frame, northLocked, alpha, config.MinimapSquare);
         }
 
-        DrawBlips(draw, center, contentHalf, snapshot, pixelsPerYalm, frame, northLocked, alpha, config.MinimapSquare);
-        DrawMapTitle(draw, frameCorners, snapshot.MapTitle, alpha);
         DrawPlayerIndicator(
             draw,
             center,
@@ -73,7 +87,11 @@ public static class MinimapRenderer
             northLocked,
             alpha,
             MinimapLayout.ClampFacingConeSizeScale(config.MinimapFacingConeSizeScale),
-            MinimapLayout.ClampFacingConeOpacity(config.MinimapFacingConeOpacity));
+            MinimapLayout.ClampFacingConeOpacity(config.MinimapFacingConeOpacity),
+            MinimapLayout.ClampPlayerPinSize(config.MinimapPlayerPinSize),
+            snapshot.PlayerPinFillColor);
+        DrawBlips(draw, center, contentHalf, snapshot, frame, northLocked, alpha, config.MinimapSquare);
+        DrawMapTitle(draw, frameCorners, snapshot.MapTitle, alpha);
 
         DrawOuterBorder(
             draw,
@@ -275,28 +293,124 @@ public static class MinimapRenderer
         float alpha,
         bool square)
     {
-        var ringColor = ApplyAlpha(0x40485868, alpha);
-        if (square)
-        {
-            var innerHalf = radius * 0.82f;
-            var innerCorners = BuildFrameCorners(center, innerHalf, frame);
-            draw.AddPolyline(ref innerCorners[0], 4, ringColor, ImDrawFlags.Closed, 1f);
-        }
-        else
-        {
-            draw.AddCircle(center, radius, ringColor, CircularMapSegments, 1.2f);
-            draw.AddCircle(center, radius * 0.55f, ApplyAlpha(0x28303840, alpha), 32, 1f);
-        }
-
         var northOffset = northLocked
             ? new Vector2(0f, -radius * 0.88f)
             : TransformMapLocalOffset(new Vector2(0f, -radius * 0.88f), frame);
         var northPos = center + northOffset;
-        draw.AddTriangleFilled(
-            northPos + new Vector2(0f, -6f),
-            northPos + new Vector2(-5f, 4f),
-            northPos + new Vector2(5f, 4f),
-            ApplyAlpha(0xFFE8C070, alpha));
+        draw.AddCircleFilled(northPos, 17f, ApplyAlpha(0xD0182028, alpha), 24);
+        draw.AddCircle(northPos, 17f, ApplyAlpha(0xE0D0DEEA, alpha), 24, 1.5f);
+        var northFontSize = ImGui.GetFontSize() * CardinalTextScale;
+        var northTextSize = ImGui.CalcTextSize("N") * CardinalTextScale;
+        draw.AddText(
+            ImGui.GetFont(),
+            northFontSize,
+            northPos - (northTextSize * 0.5f),
+            ApplyAlpha(NorthAccentColor, alpha),
+            "N");
+    }
+
+    private static void DrawCardinalDirections(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float radius,
+        bool northLocked,
+        MapFrameTransform frame,
+        float alpha)
+    {
+        DrawCardinalLabel(draw, center, radius, northLocked, frame, alpha, new Vector2(1f, 0f), "E");
+        DrawCardinalLabel(draw, center, radius, northLocked, frame, alpha, new Vector2(0f, 1f), "S");
+        DrawCardinalLabel(draw, center, radius, northLocked, frame, alpha, new Vector2(-1f, 0f), "W");
+    }
+
+    private static void DrawCardinalLabel(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float radius,
+        bool northLocked,
+        MapFrameTransform frame,
+        float alpha,
+        Vector2 direction,
+        string label)
+    {
+        var localOffset = direction * (radius * 0.88f);
+        var offset = northLocked ? localOffset : TransformMapLocalOffset(localOffset, frame);
+        var pos = center + offset;
+        var textSize = ImGui.CalcTextSize(label);
+        var scaledTextSize = textSize * CardinalTextScale;
+        var textPos = pos - (scaledTextSize * 0.5f);
+        draw.AddText(
+            ImGui.GetFont(),
+            ImGui.GetFontSize() * CardinalTextScale,
+            textPos + new Vector2(1.5f, 1.5f),
+            ApplyAlpha(0xCCFFFFFF, alpha),
+            label);
+        draw.AddText(
+            ImGui.GetFont(),
+            ImGui.GetFontSize() * CardinalTextScale,
+            textPos,
+            ApplyAlpha(0xFF000000, alpha),
+            label);
+    }
+
+    private static void DrawFateAreas(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float contentHalf,
+        MinimapSnapshot snapshot,
+        MapFrameTransform frame,
+        bool northLocked,
+        float alpha,
+        bool square)
+    {
+        if (snapshot.FateAreas.Count == 0)
+        {
+            return;
+        }
+
+        var clipRadius = contentHalf * BlipClipScale;
+        var fillColor = ApplyAlpha(FateAreaFillColor, alpha * FateAreaFillAlphaScale);
+        var ringColor = ApplyAlpha(FateAreaRingColor, alpha);
+
+        foreach (var area in snapshot.FateAreas)
+        {
+            var screenOffset = area.ScreenOffset;
+            if (!northLocked)
+            {
+                screenOffset = TransformMapLocalOffset(screenOffset, frame);
+            }
+
+            var pos = center + screenOffset;
+            if (square && !IsInsideSquare(pos, center, clipRadius))
+            {
+                continue;
+            }
+
+            if (!square && Vector2.Distance(pos, center) > clipRadius)
+            {
+                continue;
+            }
+
+            var radius = area.RadiusPixels;
+            draw.AddCircleFilled(pos, radius, fillColor, FateAreaSegments);
+            DrawDashedCircle(draw, pos, radius, ringColor, FateAreaRingThickness);
+        }
+    }
+
+    private static void DrawDashedCircle(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float radius,
+        uint color,
+        float thickness)
+    {
+        for (var i = 0; i < FateAreaSegments; i += 2)
+        {
+            var angleStart = (i / (float)FateAreaSegments) * MathF.PI * 2f;
+            var angleEnd = ((i + 1) / (float)FateAreaSegments) * MathF.PI * 2f;
+            draw.PathClear();
+            draw.PathArcTo(center, radius, angleStart, angleEnd, 4);
+            draw.PathStroke(color, ImDrawFlags.None, thickness);
+        }
     }
 
     private static void DrawIconMarkers(
@@ -357,7 +471,6 @@ public static class MinimapRenderer
         Vector2 center,
         float contentHalf,
         MinimapSnapshot snapshot,
-        float pixelsPerYalm,
         MapFrameTransform frame,
         bool northLocked,
         float alpha,
@@ -366,13 +479,13 @@ public static class MinimapRenderer
         var clipRadius = contentHalf * BlipClipScale;
         foreach (var blip in snapshot.Blips)
         {
-            var screenOffset = blip.LocalOffset * pixelsPerYalm;
+            var screenOffset = blip.ScreenOffset;
             if (!northLocked)
             {
                 screenOffset = TransformMapLocalOffset(screenOffset, frame);
             }
 
-            var pos = center + new Vector2(screenOffset.X, -screenOffset.Y);
+            var pos = center + screenOffset;
             if (square && !IsInsideSquare(pos, center, clipRadius))
             {
                 continue;
@@ -384,6 +497,9 @@ public static class MinimapRenderer
             }
 
             draw.AddCircleFilled(pos, blip.Radius, ApplyAlpha(blip.Color, alpha));
+            draw.AddCircle(pos, blip.Radius, ApplyAlpha(0xFF000000, alpha), 24, PartyBlipOutlineThickness);
+            DrawRadialCenterGlow(draw, pos, blip.Radius, alpha);
+            draw.AddCircleFilled(pos, blip.Radius * MarkerCenterDotScale, ApplyAlpha(0xFFFFFFFF, alpha), 16);
         }
     }
 
@@ -395,9 +511,12 @@ public static class MinimapRenderer
         bool northLocked,
         float alpha,
         float facingConeSizeScale,
-        float facingConeOpacity)
+        float facingConeOpacity,
+        float playerPinSize,
+        uint playerPinColorArgb)
     {
-        if (TryDrawNativePlayerIndicator(
+        var cameraFacing = GetCameraFacingDirection(snapshot, northLocked);
+        if (!TryDrawNativeVisionCone(
                 draw,
                 center,
                 contentHalf,
@@ -407,21 +526,21 @@ public static class MinimapRenderer
                 facingConeSizeScale,
                 facingConeOpacity))
         {
-            return;
+            DrawFacingCone(
+                draw,
+                center,
+                cameraFacing,
+                contentHalf * facingConeSizeScale,
+                alpha * facingConeOpacity);
         }
 
-        DrawFallbackPlayerIndicator(
-            draw,
-            center,
-            contentHalf,
-            snapshot,
-            northLocked,
-            alpha,
-            facingConeSizeScale,
-            facingConeOpacity);
+        var characterFacing = GetCharacterFacingDirection(snapshot, northLocked);
+        var pinFill = ApplyAlpha(playerPinColorArgb, alpha);
+        var pinOutline = ApplyAlpha(0xFF000000, alpha);
+        DrawTeardropPin(draw, center, characterFacing, playerPinSize, pinFill, pinOutline);
     }
 
-    private static bool TryDrawNativePlayerIndicator(
+    private static bool TryDrawNativeVisionCone(
         ImDrawListPtr draw,
         Vector2 center,
         float contentHalf,
@@ -431,9 +550,7 @@ public static class MinimapRenderer
         float facingConeSizeScale,
         float facingConeOpacity)
     {
-        if (!indicator.IsValid ||
-            !MinimapTextureUtil.IsDrawable(indicator.ConeTexture) ||
-            !MinimapTextureUtil.IsDrawable(indicator.PinTexture))
+        if (!indicator.IsValid || !MinimapTextureUtil.IsDrawable(indicator.ConeTexture))
         {
             return false;
         }
@@ -441,16 +558,12 @@ public static class MinimapRenderer
         var nativeMapSize = indicator.NativeMapSize > 1f ? indicator.NativeMapSize : 200f;
         var scale = (contentHalf * 2f) / nativeMapSize;
         var coneHalf = indicator.ConeSize * scale * facingConeSizeScale * 0.5f;
-        var pinHalf = indicator.PinSize * scale * 0.5f;
-        if (coneHalf.X < 0.5f || coneHalf.Y < 0.5f || pinHalf.X < 0.5f || pinHalf.Y < 0.5f)
+        if (coneHalf.X < 0.5f || coneHalf.Y < 0.5f)
         {
             return false;
         }
 
         var coneRotation = northLocked ? indicator.NativeConeRotation : 0f;
-        var pinRotation = northLocked ? indicator.NativePinRotation : 0f;
-        var tint = ApplyAlpha(0xFFFFFFFF, alpha);
-
         DrawRotatedImage(
             draw,
             indicator.ConeTexture!.GetWrapOrEmpty().Handle,
@@ -461,43 +574,83 @@ public static class MinimapRenderer
             indicator.ConeUvMax,
             ApplyAlpha(0xFFFFFFFF, alpha * facingConeOpacity));
 
-        DrawRotatedImage(
-            draw,
-            indicator.PinTexture!.GetWrapOrEmpty().Handle,
-            center,
-            pinHalf,
-            pinRotation,
-            indicator.PinUvMin,
-            indicator.PinUvMax,
-            tint);
-
         return true;
     }
 
-    private static void DrawFallbackPlayerIndicator(
+    /// <summary>
+    /// Rounded teardrop pin at minimap center; points in character facing, independent of camera cone.
+    /// </summary>
+    private static void DrawTeardropPin(
         ImDrawListPtr draw,
         Vector2 center,
-        float contentHalf,
-        MinimapSnapshot snapshot,
-        bool northLocked,
-        float alpha,
-        float facingConeSizeScale,
-        float facingConeOpacity)
+        Vector2 facing,
+        float radius,
+        uint fillColor,
+        uint outlineColor)
     {
-        var pinColor = ApplyAlpha(0xFF2F9BFF, alpha);
-        var outlineColor = ApplyAlpha(0xFF0E1E2E, alpha);
-        const float pinRadius = 7.5f;
+        if (facing.LengthSquared() < 0.0001f)
+        {
+            facing = new Vector2(0f, -1f);
+        }
+        else
+        {
+            facing = Vector2.Normalize(facing);
+        }
 
-        var facing = GetScreenFacingDirection(snapshot, northLocked);
-        DrawFacingCone(
-            draw,
-            center,
-            facing,
-            contentHalf * facingConeSizeScale,
-            alpha * facingConeOpacity);
+        var facingAngle = MathF.Atan2(facing.X, facing.Y);
+        var bulbRadius = radius * 1.05f;
+        var bulbOffset = radius * 0.48f;
+        var tipDistance = radius * 1.55f;
+        var backCenter = center - (facing * bulbOffset);
+        var tip = center + (facing * tipDistance);
 
-        draw.AddCircleFilled(center, pinRadius + 1.2f, outlineColor);
-        draw.AddCircleFilled(center, pinRadius, pinColor);
+        const int arcSegments = 28;
+        const float arcHalfSpan = MathF.PI * 0.78f;
+        var arcStart = facingAngle + MathF.PI - arcHalfSpan;
+        var arcEnd = facingAngle + MathF.PI + arcHalfSpan;
+
+        draw.PathClear();
+        for (var i = 0; i <= arcSegments; i++)
+        {
+            var t = i / (float)arcSegments;
+            var angle = arcStart + (t * (arcEnd - arcStart));
+            var point = backCenter + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * bulbRadius;
+            draw.PathLineTo(point);
+        }
+
+        draw.PathLineTo(tip);
+
+        var outlineThickness = MathF.Max(9f, radius * 0.68f);
+        draw.PathStroke(outlineColor, ImDrawFlags.Closed, outlineThickness);
+
+        draw.PathClear();
+        for (var i = 0; i <= arcSegments; i++)
+        {
+            var t = i / (float)arcSegments;
+            var angle = arcStart + (t * (arcEnd - arcStart));
+            var point = backCenter + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * bulbRadius;
+            draw.PathLineTo(point);
+        }
+
+        draw.PathLineTo(tip);
+        draw.PathFillConvex(fillColor);
+
+        var markerAlpha = (fillColor >> 24) / 255f;
+        DrawRadialCenterGlow(draw, center, radius, markerAlpha);
+        draw.AddCircleFilled(center, radius * MarkerCenterDotScale, ApplyAlpha(0xFFFFFFFF, markerAlpha), 16);
+    }
+
+    private static void DrawRadialCenterGlow(ImDrawListPtr draw, Vector2 center, float markerRadius, float alpha)
+    {
+        // Build a smooth radial falloff by stacking several translucent rings.
+        var maxRadius = markerRadius * MarkerCenterGlowScale;
+        for (var i = MarkerGlowRingCount; i >= 1; i--)
+        {
+            var t = i / (float)MarkerGlowRingCount;
+            var ringRadius = maxRadius * t;
+            var ringAlpha = alpha * (0.30f * t * t);
+            draw.AddCircleFilled(center, ringRadius, ApplyAlpha(0xFFFFFFFF, ringAlpha), 20);
+        }
     }
 
     private static void DrawRotatedImage(
@@ -580,9 +733,9 @@ public static class MinimapRenderer
     }
 
     /// <summary>
-    /// Screen-space facing on the minimap (ImGui Y-down). North-locked uses camera view; rotating mode stays fixed up.
+    /// Vision cone direction (camera view when north-locked).
     /// </summary>
-    private static Vector2 GetScreenFacingDirection(MinimapSnapshot snapshot, bool northLocked)
+    private static Vector2 GetCameraFacingDirection(MinimapSnapshot snapshot, bool northLocked)
     {
         if (!northLocked)
         {
@@ -592,6 +745,20 @@ public static class MinimapRenderer
         var yaw = ResolveNorthLockedConeYaw(snapshot);
         var direction = new Vector2(MathF.Sin(yaw), MathF.Cos(yaw));
         return direction.LengthSquared() > 0.0001f ? Vector2.Normalize(direction) : new Vector2(0f, 1f);
+    }
+
+    /// <summary>
+    /// Teardrop pin direction (character body facing when north-locked).
+    /// </summary>
+    private static Vector2 GetCharacterFacingDirection(MinimapSnapshot snapshot, bool northLocked)
+    {
+        if (!northLocked)
+        {
+            return new Vector2(0f, -1f);
+        }
+
+        var direction = new Vector2(MathF.Sin(snapshot.PlayerYaw), MathF.Cos(snapshot.PlayerYaw));
+        return direction.LengthSquared() > 0.0001f ? Vector2.Normalize(direction) : new Vector2(0f, -1f);
     }
 
     private static float ResolveNorthLockedConeYaw(MinimapSnapshot snapshot)

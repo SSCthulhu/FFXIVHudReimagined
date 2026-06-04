@@ -8,7 +8,7 @@ namespace FFXIVHudPlugin;
 
 public sealed class MinimapStateProvider
 {
-    private const float PartyBlipRadius = 4f;
+    private const long EventMarkerRefreshIntervalMs = 750;
 
     private readonly IObjectTable objectTable;
     private readonly IPartyList partyList;
@@ -18,6 +18,7 @@ public sealed class MinimapStateProvider
     private readonly MinimapMapTextureCache mapTextureCache;
     private readonly MinimapPlayerIndicatorCache playerIndicatorCache;
     private readonly MinimapMarkerIconCache markerIconCache;
+    private long lastEventMarkerRefreshMs;
 
     public MinimapDiagnosticReport LatestDiagnostics { get; private set; } = new();
 
@@ -54,13 +55,14 @@ public sealed class MinimapStateProvider
         var range = MinimapLayout.ClampVisibleRange(visibleRangeYalms);
         var blips = new List<MinimapBlip>(8);
         var iconMarkers = new List<MinimapIconMarker>(MinimapLayout.MaxNativeMarkersPerFrame);
-        this.AddPartyBlips(player, range, blips);
+        var fateAreas = new List<MinimapFateArea>(8);
 
         var hasMapTexture = this.mapTextureCache.TryGetCurrentMapTexture(out var mapTexture) &&
                             MinimapTextureUtil.IsDrawable(mapTexture);
         var mapUvMin = Vector2.Zero;
         var mapUvMax = Vector2.One;
         var hasMapTransform = this.TryResolveMapTransform(out var offsetX, out var offsetY, out var sizeFactor);
+        this.TryRefreshEventMarkers();
         if (hasMapTexture && hasMapTransform &&
             !this.TryGetVisibleMapUvWindow(player, range, out mapUvMin, out mapUvMax))
         {
@@ -68,11 +70,49 @@ public sealed class MinimapStateProvider
             mapUvMax = new Vector2(0.55f, 0.55f);
         }
 
+        if (hasMapTransform)
+        {
+            var contentHalf = MinimapLayout.ClampSize(minimapSize) * 0.5f;
+            var partyBlipRadius = MinimapLayout.ClampPlayerPinSize(this.configuration.MinimapPlayerPinSize);
+            MinimapPartyBlips.TryCollect(
+                this.partyList,
+                this.objectTable,
+                this.clientState,
+                this.dataManager,
+                player,
+                contentHalf,
+                mapUvMin,
+                mapUvMax,
+                offsetX,
+                offsetY,
+                sizeFactor,
+                range,
+                partyBlipRadius,
+                blips);
+
+            MinimapEnemyBlips.TryCollect(
+                this.objectTable,
+                this.partyList,
+                player,
+                contentHalf,
+                mapUvMin,
+                mapUvMax,
+                offsetX,
+                offsetY,
+                sizeFactor,
+                range,
+                partyBlipRadius,
+                blips);
+        }
+
         if (showNativeMarkers && hasMapTransform)
         {
             this.markerIconCache.BeginFrame();
             var contentHalf = MinimapLayout.ClampSize(minimapSize) * 0.5f;
-            MinimapNaviMapMarkers.TryCollect(
+            var clampedMarkerSize = MinimapLayout.ClampMarkerIconSize(markerIconSize);
+            var markerBudget = MinimapLayout.MaxNativeMarkersPerFrame;
+
+            MinimapFlagMarkers.TryCollect(
                 contentHalf,
                 mapUvMin,
                 mapUvMax,
@@ -81,14 +121,146 @@ public sealed class MinimapStateProvider
                 offsetY,
                 sizeFactor,
                 range,
-                MinimapLayout.ClampMarkerIconSize(markerIconSize),
+                clampedMarkerSize,
                 this.markerIconCache,
-                iconMarkers);
+                iconMarkers,
+                markerBudget);
+
+            var remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapTempMapMarkers.TryCollect(
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    remainingMarkerBudget);
+                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            }
+
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapGatheringPointMarkers.TryCollect(
+                    this.objectTable,
+                    this.dataManager,
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    remainingMarkerBudget);
+                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            }
+
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapGatheringMarkers.TryCollect(
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    remainingMarkerBudget);
+                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            }
+
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapFateMarkers.TryCollect(
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    fateAreas,
+                    remainingMarkerBudget);
+                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            }
+
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapEventMarkers.TryCollect(
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    remainingMarkerBudget);
+                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            }
+
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapMapMarkers.TryCollect(
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    remainingMarkerBudget);
+                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            }
+
+            if (remainingMarkerBudget > 0)
+            {
+                MinimapNaviMapMarkers.TryCollect(
+                    contentHalf,
+                    mapUvMin,
+                    mapUvMax,
+                    player.Position,
+                    offsetX,
+                    offsetY,
+                    sizeFactor,
+                    range,
+                    clampedMarkerSize,
+                    this.markerIconCache,
+                    iconMarkers,
+                    remainingMarkerBudget);
+            }
         }
 
         var hasNativeMapFrame = MinimapNativeFrame.TryGetMapImageTransform(out var nativeFrame);
         var hasCameraMapYaw = MinimapCameraHeading.TryGetMapYaw(out var cameraMapYaw);
 
+        var playerIndicator = this.playerIndicatorCache.GetAssets();
+        var classJobId = player.ClassJob.RowId;
         var snapshot = new MinimapSnapshot
         {
             IsActive = true,
@@ -98,11 +270,12 @@ public sealed class MinimapStateProvider
             MapTitle = this.GetMapTitle(),
             Blips = blips,
             IconMarkers = iconMarkers,
+            FateAreas = fateAreas,
             MapTexture = mapTexture,
             MapUvMin = mapUvMin,
             MapUvMax = mapUvMax,
             HasMapTexture = hasMapTexture,
-            PlayerIndicator = this.playerIndicatorCache.GetAssets(),
+            PlayerIndicator = playerIndicator,
             HasNativeMapFrame = hasNativeMapFrame,
             NativeMapImageRotation = nativeFrame.Rotation,
             NativeMapImageScaleX = nativeFrame.ScaleX,
@@ -110,6 +283,11 @@ public sealed class MinimapStateProvider
             NativeNorthLockedUp = nativeFrame.NorthLockedUp,
             NativePlayerConeRotation = nativeFrame.PlayerConeRotation,
             VisibleRangeYalms = range,
+            PlayerClassJobId = classJobId,
+            PlayerPinFillColor = MinimapPlayerPinColor.Resolve(
+                this.configuration,
+                classJobId,
+                this.dataManager),
         };
 
         if (this.configuration.MinimapShowDiagnostics)
@@ -118,6 +296,7 @@ public sealed class MinimapStateProvider
                 this.configuration,
                 this.clientState,
                 this.objectTable,
+                this.partyList,
                 this.dataManager,
                 this.mapTextureCache,
                 snapshot);
@@ -218,73 +397,30 @@ public sealed class MinimapStateProvider
         return territory.Map.RowId;
     }
 
-    private void AddPartyBlips(ICharacter player, float visibleRangeYalms, List<MinimapBlip> blips)
+    private unsafe void TryRefreshEventMarkers()
     {
-        var origin = player.Position;
-        for (var i = 0; i < this.partyList.Length; i++)
+        var now = Environment.TickCount64;
+        if (now - this.lastEventMarkerRefreshMs < EventMarkerRefreshIntervalMs)
         {
-            var member = this.partyList[i];
-            if (member.ObjectId == 0 || member.ObjectId == player.GameObjectId)
-            {
-                continue;
-            }
-
-            var gameObject = this.objectTable.SearchById(member.ObjectId);
-            if (gameObject is not ICharacter character)
-            {
-                continue;
-            }
-
-            if (!TryCreateBlip(origin, character.Position, visibleRangeYalms, 0xFF66D4FF, PartyBlipRadius, out var blip))
-            {
-                continue;
-            }
-
-            blips.Add(blip);
-        }
-    }
-
-    private static bool TryCreateBlip(
-        Vector3 playerPosition,
-        Vector3 worldPosition,
-        float visibleRangeYalms,
-        uint color,
-        float radius,
-        out MinimapBlip blip)
-    {
-        return TryCreateBlip(
-            playerPosition,
-            worldPosition.X,
-            worldPosition.Z,
-            visibleRangeYalms,
-            color,
-            radius,
-            out blip);
-    }
-
-    private static bool TryCreateBlip(
-        Vector3 playerPosition,
-        float worldX,
-        float worldZ,
-        float visibleRangeYalms,
-        uint color,
-        float radius,
-        out MinimapBlip blip)
-    {
-        var delta = new Vector2(worldX - playerPosition.X, worldZ - playerPosition.Z);
-        if (delta.Length() > visibleRangeYalms)
-        {
-            blip = default;
-            return false;
+            return;
         }
 
-        blip = new MinimapBlip
+        this.lastEventMarkerRefreshMs = now;
+
+        var agentMap = AgentMap.Instance();
+        if (agentMap is null || agentMap->CurrentMapId == 0)
         {
-            LocalOffset = delta,
-            Color = color,
-            Radius = radius,
-        };
-        return true;
+            return;
+        }
+
+        try
+        {
+            agentMap->UpdateEventMapMarkers(&agentMap->EventMarkersPtrs);
+        }
+        catch
+        {
+            // Best-effort refresh; marker collectors can still use current vector state.
+        }
     }
 
     private unsafe string GetMapTitle()
