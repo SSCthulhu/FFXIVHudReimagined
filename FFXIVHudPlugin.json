@@ -1,0 +1,14 @@
+{
+  "Author": "carle",
+  "Name": "FFXIV Hud Reimagined",
+  "Punchline": "Center-orb HUD with mirrored hotbars.",
+  "Description": "A custom Dalamud HUD layout with HP orb, MP ring, mirrored hotbars, status rows, class gauge, limit break bubbles, and optional custom minimap.",
+  "InternalName": "FFXIVHudReimagined",
+  "ApplicableVersion": "any",
+  "RepoUrl": "https://github.com/SSCthulhu/FFXIVHudReimagined",
+  "Tags": [
+    "hud",
+    "ui",
+    "combat"
+  ]
+}

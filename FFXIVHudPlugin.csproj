@@ -1,0 +1,20 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <AssemblyName>FFXIVHudPlugin</AssemblyName>
+    <RootNamespace>FFXIVHudPlugin</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <DalamudApiLevel>15</DalamudApiLevel>
+    <Authors>carle</Authors>
+    <Description>FFXIV Hud Reimagined — custom HUD with center orb and mirrored hotbars.</Description>
+    <Version>0.0.29</Version>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsAotCompatible>false</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+</Project>
