@@ -7,7 +7,7 @@ namespace FFXIVHudPlugin;
 [Serializable]
 public sealed class HudConfiguration : IPluginConfiguration
 {
-    public int Version { get; set; } = 55;
+    public int Version { get; set; } = 57;
 
     public bool Enabled { get; set; } = true;
     public bool UnlockLayout { get; set; } = false;
@@ -106,6 +106,7 @@ public sealed class HudConfiguration : IPluginConfiguration
     public HudLayoutPresetSnapshot? ArpgPresetSnapshot { get; set; }
     public List<NamedHudLayoutPreset> CustomLayouts { get; set; } = new();
     public string SelectedCustomLayoutName { get; set; } = string.Empty;
+    public ActionCameraConfiguration ActionCamera { get; set; } = new();
 
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
@@ -549,6 +550,28 @@ public sealed class HudConfiguration : IPluginConfiguration
             this.Version = 55;
             didChange = true;
         }
+
+        if (this.Version < 56)
+        {
+            this.ActionCamera ??= new ActionCameraConfiguration();
+            this.Version = 56;
+            didChange = true;
+        }
+
+        if (this.Version < 57)
+        {
+            this.ActionCamera ??= new ActionCameraConfiguration();
+            this.ActionCamera.BackendMode = ActionCameraBackendMode.RmbLatch;
+            this.ActionCamera.UnlockMode = ActionCameraUnlockMode.Toggle;
+            this.ActionCamera.ToggleUnlockKey = Dalamud.Game.ClientState.Keys.VirtualKey.CAPITAL;
+            this.ActionCamera.HoldUnlockKey = Dalamud.Game.ClientState.Keys.VirtualKey.LMENU;
+            this.ActionCamera.EscAlwaysUnlock = true;
+            this.ActionCamera.ReacquireOnToggle = true;
+            this.ActionCamera.EnableSoftTargetSuggestion = false;
+            this.ActionCamera.SoftTargetScreenRadius = 280f;
+            this.Version = 57;
+            didChange = true;
+        }
         return didChange;
     }
 
@@ -589,6 +612,12 @@ public sealed class HudConfiguration : IPluginConfiguration
         if (this.CustomLayouts is null)
         {
             this.CustomLayouts = new();
+            changed = true;
+        }
+
+        if (this.ActionCamera is null)
+        {
+            this.ActionCamera = new ActionCameraConfiguration();
             changed = true;
         }
 
@@ -669,6 +698,37 @@ public sealed class HudConfiguration : IPluginConfiguration
         this.MinimapBorderThickness = NormalizeFloatField(this.MinimapBorderThickness, MinimapLayout.DefaultBorderThickness, MinimapLayout.MinBorderThickness, MinimapLayout.MaxBorderThickness, ref changed);
         this.MinimapMarkerIconSize = NormalizeFloatField(this.MinimapMarkerIconSize, MinimapLayout.DefaultMarkerIconSize, MinimapLayout.MinMarkerIconSize, MinimapLayout.MaxMarkerIconSize, ref changed);
         this.MinimapPlayerPinSize = NormalizeFloatField(this.MinimapPlayerPinSize, MinimapLayout.DefaultPlayerPinSize, MinimapLayout.MinPlayerPinSize, MinimapLayout.MaxPlayerPinSize, ref changed);
+        this.ActionCamera.HorizontalSensitivity = NormalizeFloatField(
+            this.ActionCamera.HorizontalSensitivity,
+            1.0f,
+            0.1f,
+            5.0f,
+            ref changed);
+        this.ActionCamera.VerticalSensitivity = NormalizeFloatField(
+            this.ActionCamera.VerticalSensitivity,
+            1.0f,
+            0.1f,
+            5.0f,
+            ref changed);
+
+        if (!Enum.IsDefined(typeof(ActionCameraUnlockMode), this.ActionCamera.UnlockMode))
+        {
+            this.ActionCamera.UnlockMode = ActionCameraUnlockMode.Toggle;
+            changed = true;
+        }
+
+        if (!Enum.IsDefined(typeof(ActionCameraBackendMode), this.ActionCamera.BackendMode))
+        {
+            this.ActionCamera.BackendMode = ActionCameraBackendMode.RmbLatch;
+            changed = true;
+        }
+
+        this.ActionCamera.SoftTargetScreenRadius = NormalizeFloatField(
+            this.ActionCamera.SoftTargetScreenRadius,
+            280f,
+            80f,
+            1200f,
+            ref changed);
 
         this.MinimapOffsetX = NormalizeFiniteFloat(this.MinimapOffsetX, MinimapLayout.DefaultOffsetX, ref changed);
         this.MinimapOffsetY = NormalizeFiniteFloat(this.MinimapOffsetY, MinimapLayout.DefaultOffsetY, ref changed);
@@ -782,18 +842,56 @@ public sealed class HudConfiguration : IPluginConfiguration
 
     public static void ApplyPreset(HudConfiguration config, HudPreset preset)
     {
-        var snapshot = preset switch
+        var appliedFromCustomLayout = TryApplyPresetOverrideFromCustomLayout(config, preset);
+        if (!appliedFromCustomLayout)
         {
-            // Always use the authoritative Default layout so the button matches the tuned baseline.
-            HudPreset.Default => HudLayoutPresetSnapshot.CreatePluginDefaultLayout(),
-            HudPreset.Expanded => HudLayoutPresetSnapshot.CreatePluginExpandedLayout(),
-            HudPreset.Arpg => HudLayoutPresetSnapshot.CreatePluginArpgLayout(),
-            _ => HudLayoutPresetSnapshot.CreatePluginArpgLayout(),
+            var snapshot = preset switch
+            {
+                // Always use the authoritative Default layout so the button matches the tuned baseline.
+                HudPreset.Default => HudLayoutPresetSnapshot.CreatePluginDefaultLayout(),
+                HudPreset.Expanded => HudLayoutPresetSnapshot.CreatePluginExpandedLayout(),
+                HudPreset.Arpg => HudLayoutPresetSnapshot.CreatePluginArpgLayout(),
+                _ => HudLayoutPresetSnapshot.CreatePluginArpgLayout(),
+            };
+
+            snapshot.ApplyTo(config);
+            config.SelectedCustomLayoutName = string.Empty;
+        }
+
+        ApplyPresetSupplementalSettings(config, preset);
+        config.Preset = preset;
+    }
+
+    private static bool TryApplyPresetOverrideFromCustomLayout(HudConfiguration config, HudPreset preset)
+    {
+        var expectedLayoutName = preset switch
+        {
+            HudPreset.Default => "Default",
+            HudPreset.Expanded => "Expanded",
+            HudPreset.Arpg => "ARPG",
+            _ => string.Empty,
         };
 
-        snapshot.ApplyTo(config);
-        config.Preset = preset;
-        config.SelectedCustomLayoutName = string.Empty;
+        if (expectedLayoutName.Length == 0)
+        {
+            return false;
+        }
+
+        return TryApplyCustomLayout(config, expectedLayoutName);
+    }
+
+    private static void ApplyPresetSupplementalSettings(HudConfiguration config, HudPreset preset)
+    {
+        if (preset == HudPreset.Default || preset == HudPreset.Expanded)
+        {
+            config.MinimapOffsetY = -820f;
+            return;
+        }
+
+        if (preset == HudPreset.Arpg)
+        {
+            config.MinimapOffsetY = -996.5f;
+        }
     }
 
     public static bool TryApplyCustomLayout(HudConfiguration config, string layoutName)

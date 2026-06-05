@@ -10,16 +10,23 @@ public sealed class ConfigWindow
     private const float PresetButtonHeight = 36f;
 
     private readonly HudConfiguration config;
+    private readonly Action<ActionCameraConfiguration>? onActionCameraConfigChanged;
     private readonly HudStateProvider? stateProvider;
     private string customLayoutNameBuffer = string.Empty;
     private int selectedCustomLayoutIndex = -1;
     private string pendingDeleteCustomLayoutName = string.Empty;
+    private bool requestOpenDeleteCustomLayoutPopup;
+    private bool requestOpenDeleteAllCustomLayoutsPopup;
     private ConfigSettingsTab selectedTab = ConfigSettingsTab.General;
 
-    public ConfigWindow(HudConfiguration config, HudStateProvider? stateProvider = null)
+    public ConfigWindow(
+        HudConfiguration config,
+        HudStateProvider? stateProvider = null,
+        Action<ActionCameraConfiguration>? onActionCameraConfigChanged = null)
     {
         this.config = config;
         this.stateProvider = stateProvider;
+        this.onActionCameraConfigChanged = onActionCameraConfigChanged;
         this.SyncCustomLayoutSelectionIndex();
     }
 
@@ -69,6 +76,8 @@ public sealed class ConfigWindow
                 ImGui.SetMouseCursor(ImGuiMouseCursor.Arrow);
             }
 
+            this.DrawDeleteCustomLayoutConfirmPopup();
+            this.DrawDeleteAllCustomLayoutsConfirmPopup();
             ImGui.End();
         }
         finally
@@ -108,6 +117,11 @@ public sealed class ConfigWindow
         {
             this.selectedTab = ConfigSettingsTab.Minimap;
         }
+
+        if (this.DrawSettingsNavButton(ConfigSettingsTab.ActionCamera, "Action Camera"))
+        {
+            this.selectedTab = ConfigSettingsTab.ActionCamera;
+        }
     }
 
     private bool DrawSettingsNavButton(ConfigSettingsTab tab, string label)
@@ -145,10 +159,208 @@ public sealed class ConfigWindow
             case ConfigSettingsTab.Minimap:
                 this.DrawMinimapSettingsTab();
                 break;
+            case ConfigSettingsTab.ActionCamera:
+                this.DrawActionCameraSettingsTab();
+                break;
             default:
                 this.DrawGeneralSettingsTab();
                 break;
         }
+    }
+
+    private void DrawActionCameraSettingsTab()
+    {
+        ImGui.TextUnformatted("Action Camera");
+        ImGui.Spacing();
+        ImGui.TextColored(0xFF9AA1AB, "Standalone camera-control mode for mouse and keyboard.");
+        ImGui.TextColored(0xFF9AA1AB, "Preserves vanilla combat and targeting. No action-combat logic.");
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        var actionConfig = this.config.ActionCamera;
+
+        var backendMode = actionConfig.BackendMode;
+        if (this.DrawActionCameraBackendCombo(ref backendMode))
+        {
+            actionConfig.BackendMode = backendMode;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var enabled = actionConfig.Enabled;
+        if (DrawSettingCheckbox("Enable Action Camera", ref enabled))
+        {
+            actionConfig.Enabled = enabled;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var unlockMode = actionConfig.UnlockMode;
+        if (this.DrawActionCameraUnlockModeCombo(ref unlockMode))
+        {
+            actionConfig.UnlockMode = unlockMode;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        if (actionConfig.UnlockMode == ActionCameraUnlockMode.Toggle)
+        {
+            var toggleKey = actionConfig.ToggleUnlockKey;
+            if (this.DrawActionCameraKeyCombo("Toggle Unlock Key", ref toggleKey))
+            {
+                actionConfig.ToggleUnlockKey = toggleKey;
+                this.NotifyActionCameraConfigChanged();
+            }
+        }
+        else
+        {
+            var holdKey = actionConfig.HoldUnlockKey;
+            if (this.DrawActionCameraKeyCombo("Hold Unlock Key", ref holdKey))
+            {
+                actionConfig.HoldUnlockKey = holdKey;
+                this.NotifyActionCameraConfigChanged();
+            }
+        }
+
+        var unlockOnUi = actionConfig.UnlockOnUi;
+        if (DrawSettingCheckbox("Auto Unlock During UI Interaction", ref unlockOnUi))
+        {
+            actionConfig.UnlockOnUi = unlockOnUi;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var escAlwaysUnlock = actionConfig.EscAlwaysUnlock;
+        if (DrawSettingCheckbox("Escape Always Unlocks Cursor", ref escAlwaysUnlock))
+        {
+            actionConfig.EscAlwaysUnlock = escAlwaysUnlock;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var reacquireOnToggle = actionConfig.ReacquireOnToggle;
+        if (DrawSettingCheckbox("Reacquire On Toggle Key", ref reacquireOnToggle))
+        {
+            actionConfig.ReacquireOnToggle = reacquireOnToggle;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var showReticle = actionConfig.ShowReticle;
+        if (DrawSettingCheckbox("Show Center Reticle", ref showReticle))
+        {
+            actionConfig.ShowReticle = showReticle;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var softTarget = actionConfig.EnableSoftTargetSuggestion;
+        if (DrawSettingCheckbox("Enable Soft Target Suggestion (Scaffold)", ref softTarget))
+        {
+            actionConfig.EnableSoftTargetSuggestion = softTarget;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var autoTarget = actionConfig.AutoTarget;
+        if (DrawSettingCheckbox("Auto Target Reticle Candidate", ref autoTarget))
+        {
+            actionConfig.AutoTarget = autoTarget;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var softRadius = actionConfig.SoftTargetScreenRadius;
+        if (DrawPreciseFloat("Soft Target Radius (px)", ref softRadius, 80f, 1200f, "%.0f", 5f))
+        {
+            actionConfig.SoftTargetScreenRadius = softRadius;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var showDebug = actionConfig.ShowDebugOverlay;
+        if (DrawSettingCheckbox("Show Action Camera Debug Overlay", ref showDebug))
+        {
+            actionConfig.ShowDebugOverlay = showDebug;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Sensitivity");
+
+        var horizontal = actionConfig.HorizontalSensitivity;
+        if (DrawPreciseFloat("Horizontal Sensitivity", ref horizontal, 0.1f, 5.0f, "%.2f", 0.05f))
+        {
+            actionConfig.HorizontalSensitivity = horizontal;
+            this.NotifyActionCameraConfigChanged();
+        }
+
+        var vertical = actionConfig.VerticalSensitivity;
+        if (DrawPreciseFloat("Vertical Sensitivity", ref vertical, 0.1f, 5.0f, "%.2f", 0.05f))
+        {
+            actionConfig.VerticalSensitivity = vertical;
+            this.NotifyActionCameraConfigChanged();
+        }
+    }
+
+    private void NotifyActionCameraConfigChanged()
+    {
+        this.config.Save();
+        this.onActionCameraConfigChanged?.Invoke(this.config.ActionCamera);
+    }
+
+    private bool DrawActionCameraUnlockModeCombo(ref ActionCameraUnlockMode mode)
+    {
+        var index = mode == ActionCameraUnlockMode.Toggle ? 1 : 0;
+        var labels = new[] { "Hold", "Toggle" };
+        if (!ImGui.Combo("Unlock Mode", ref index, labels, labels.Length))
+        {
+            return false;
+        }
+
+        mode = index == 1 ? ActionCameraUnlockMode.Toggle : ActionCameraUnlockMode.Hold;
+        return true;
+    }
+
+    private bool DrawActionCameraBackendCombo(ref ActionCameraBackendMode mode)
+    {
+        var index = mode == ActionCameraBackendMode.DirectExperimental ? 1 : 0;
+        var labels = new[] { "RMB Latch (Recommended)", "Direct Experimental" };
+        if (!ImGui.Combo("Camera Backend", ref index, labels, labels.Length))
+        {
+            return false;
+        }
+
+        mode = index == 1
+            ? ActionCameraBackendMode.DirectExperimental
+            : ActionCameraBackendMode.RmbLatch;
+        return true;
+    }
+
+    private bool DrawActionCameraKeyCombo(string label, ref Dalamud.Game.ClientState.Keys.VirtualKey key)
+    {
+        var keys = label.Contains("Toggle", StringComparison.OrdinalIgnoreCase)
+            ? ActionCameraKeyPresets.ToggleKeys
+            : ActionCameraKeyPresets.HoldKeys;
+        return this.DrawSpecificKeyCombo(label, keys, ref key);
+    }
+
+    private bool DrawSpecificKeyCombo(
+        string label,
+        Dalamud.Game.ClientState.Keys.VirtualKey[] keys,
+        ref Dalamud.Game.ClientState.Keys.VirtualKey key)
+    {
+        var labels = new string[keys.Length];
+        var selectedIndex = 0;
+        for (var i = 0; i < keys.Length; i++)
+        {
+            labels[i] = ActionCameraKeyPresets.GetLabel(keys[i]);
+            if (keys[i] == key)
+            {
+                selectedIndex = i;
+            }
+        }
+
+        if (!ImGui.Combo(label, ref selectedIndex, labels, labels.Length))
+        {
+            return false;
+        }
+
+        key = keys[selectedIndex];
+        return true;
     }
 
     private void DrawGeneralSettingsTab()
@@ -352,7 +564,7 @@ public sealed class ConfigWindow
             if (this.selectedCustomLayoutIndex >= 0 && this.selectedCustomLayoutIndex < this.config.CustomLayouts.Count)
             {
                 this.pendingDeleteCustomLayoutName = this.config.CustomLayouts[this.selectedCustomLayoutIndex].Name;
-                ImGui.OpenPopup("ConfirmDeleteCustomLayout");
+                this.requestOpenDeleteCustomLayoutPopup = true;
             }
         }
 
@@ -361,8 +573,24 @@ public sealed class ConfigWindow
             ImGui.EndDisabled();
         }
 
+        ImGui.Spacing();
+        var canDeleteAny = this.config.CustomLayouts.Count > 0;
+        if (!canDeleteAny)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Delete All Layouts", new Vector2(-1f, 0f)))
+        {
+            this.requestOpenDeleteAllCustomLayoutsPopup = true;
+        }
+
+        if (!canDeleteAny)
+        {
+            ImGui.EndDisabled();
+        }
+
         ImGui.EndChild();
-        this.DrawDeleteCustomLayoutConfirmPopup();
     }
 
     private void DrawOrbSettingsTab()
@@ -868,6 +1096,12 @@ public sealed class ConfigWindow
 
     private void DrawDeleteCustomLayoutConfirmPopup()
     {
+        if (this.requestOpenDeleteCustomLayoutPopup)
+        {
+            ImGui.OpenPopup("ConfirmDeleteCustomLayout");
+            this.requestOpenDeleteCustomLayoutPopup = false;
+        }
+
         var center = ImGui.GetMainViewport().Pos + (ImGui.GetMainViewport().Size * 0.5f);
         ImGui.SetNextWindowPos(center, ImGuiCond.Always, new Vector2(0.5f, 0.5f));
         if (!ImGui.BeginPopupModal("ConfirmDeleteCustomLayout", ImGuiWindowFlags.AlwaysAutoResize))
@@ -883,7 +1117,7 @@ public sealed class ConfigWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        if (ImGui.Button("Delete", new Vector2(120f, 0f)))
+        if (ImGui.Button("Yes", new Vector2(120f, 0f)))
         {
             if (HudConfiguration.TryDeleteCustomLayout(this.config, this.pendingDeleteCustomLayoutName))
             {
@@ -897,9 +1131,54 @@ public sealed class ConfigWindow
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Cancel", new Vector2(120f, 0f)))
+        if (ImGui.Button("No", new Vector2(120f, 0f)))
         {
             this.pendingDeleteCustomLayoutName = string.Empty;
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+    }
+
+    private void DrawDeleteAllCustomLayoutsConfirmPopup()
+    {
+        if (this.requestOpenDeleteAllCustomLayoutsPopup)
+        {
+            ImGui.OpenPopup("ConfirmDeleteAllCustomLayouts");
+            this.requestOpenDeleteAllCustomLayoutsPopup = false;
+        }
+
+        var center = ImGui.GetMainViewport().Pos + (ImGui.GetMainViewport().Size * 0.5f);
+        ImGui.SetNextWindowPos(center, ImGuiCond.Always, new Vector2(0.5f, 0.5f));
+        if (!ImGui.BeginPopupModal("ConfirmDeleteAllCustomLayouts", ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            return;
+        }
+
+        ImGui.TextUnformatted("Delete all custom layouts?");
+        ImGui.Spacing();
+        ImGui.TextColored(0xFFFF8080, "This will remove every saved custom layout and cannot be undone.");
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        if (ImGui.Button("Yes", new Vector2(120f, 0f)))
+        {
+            if (this.config.CustomLayouts.Count > 0)
+            {
+                this.config.CustomLayouts.Clear();
+                this.config.SelectedCustomLayoutName = string.Empty;
+                this.selectedCustomLayoutIndex = -1;
+                this.pendingDeleteCustomLayoutName = string.Empty;
+                this.config.Save();
+            }
+
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("No", new Vector2(120f, 0f)))
+        {
             ImGui.CloseCurrentPopup();
         }
 
@@ -909,9 +1188,19 @@ public sealed class ConfigWindow
     private void SyncCustomLayoutSelectionIndex()
     {
         this.config.CustomLayouts ??= new();
-        this.selectedCustomLayoutIndex = -1;
+        if (this.config.CustomLayouts.Count == 0)
+        {
+            this.selectedCustomLayoutIndex = -1;
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(this.config.SelectedCustomLayoutName))
         {
+            if (this.selectedCustomLayoutIndex < 0 || this.selectedCustomLayoutIndex >= this.config.CustomLayouts.Count)
+            {
+                this.selectedCustomLayoutIndex = 0;
+            }
+
             return;
         }
 
@@ -930,6 +1219,11 @@ public sealed class ConfigWindow
 
                 return;
             }
+        }
+
+        if (this.selectedCustomLayoutIndex < 0 || this.selectedCustomLayoutIndex >= this.config.CustomLayouts.Count)
+        {
+            this.selectedCustomLayoutIndex = 0;
         }
     }
 
@@ -1179,17 +1473,16 @@ public sealed class ConfigWindow
         ImGui.PushID(label);
         ImGui.AlignTextToFramePadding();
         ImGui.SetNextItemWidth(ImGui.CalcItemWidth() - ImGui.CalcTextSize(label).X - 12f);
-        if (!ImGui.DragFloat("##value", ref value, step, min, max, format))
+        var changed = ImGui.DragFloat("##value", ref value, step, min, max, format);
+        if (changed)
         {
-            ImGui.PopID();
-            return false;
+            value = SnapToStep(value, min, max, step);
         }
 
-        value = SnapToStep(value, min, max, step);
         ImGui.SameLine(0f, 6f);
         ImGui.TextUnformatted(label);
         ImGui.PopID();
-        return true;
+        return changed;
     }
 
     private static bool DrawPreciseInt(string label, ref int value, int min, int max)
@@ -1197,17 +1490,16 @@ public sealed class ConfigWindow
         ImGui.PushID(label);
         ImGui.AlignTextToFramePadding();
         ImGui.SetNextItemWidth(ImGui.CalcItemWidth() - ImGui.CalcTextSize(label).X - 12f);
-        if (!ImGui.DragInt("##value", ref value, 0.05f, min, max))
+        var changed = ImGui.DragInt("##value", ref value, 0.05f, min, max);
+        if (changed)
         {
-            ImGui.PopID();
-            return false;
+            value = Math.Clamp(value, min, max);
         }
 
-        value = Math.Clamp(value, min, max);
         ImGui.SameLine(0f, 6f);
         ImGui.TextUnformatted(label);
         ImGui.PopID();
-        return true;
+        return changed;
     }
 
     private static bool DrawSectionHeaderWithEnable(string title, ref bool enabled)
@@ -1225,5 +1517,6 @@ public sealed class ConfigWindow
         Hotbar = 2,
         BuffDebuff = 3,
         Minimap = 4,
+        ActionCamera = 5,
     }
 }

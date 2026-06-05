@@ -1,6 +1,7 @@
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Keys;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace FFXIVHudPlugin;
@@ -18,10 +19,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private readonly ICondition condition;
     private readonly IObjectTable objectTable;
     private readonly IPluginLog pluginLog;
+    private readonly IFramework framework;
     private readonly HudConfiguration configuration;
     private readonly HudStateProvider stateProvider;
     private readonly HudWindow hudWindow;
     private readonly ConfigWindow configWindow;
+    private readonly ActionCameraPlugin actionCameraPlugin;
     private DateTime hideHudUntilUtc = DateTime.MinValue;
     private DateTime nextDrawErrorLogUtc = DateTime.MinValue;
     private bool nativeUiHiddenApplied;
@@ -61,6 +64,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
         IClientState clientState,
         ICondition condition,
         IObjectTable objectTable,
+        IFramework framework,
+        IKeyState keyState,
+        IGameGui gameGui,
+        ITargetManager targetManager,
         IDataManager dataManager,
         ITextureProvider textureProvider,
         IPartyList partyList,
@@ -71,6 +78,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.clientState = clientState;
         this.condition = condition;
         this.objectTable = objectTable;
+        this.framework = framework;
         this.pluginLog = pluginLog;
         this.configuration = pluginInterface.GetPluginConfig() as HudConfiguration ?? new HudConfiguration();
         this.configuration.Initialize(pluginInterface);
@@ -85,13 +93,38 @@ public sealed unsafe class Plugin : IDalamudPlugin
             clientState,
             this.configuration);
         this.hudWindow = new HudWindow(this.configuration, this.stateProvider, this.OpenMinimapConfig);
-        this.configWindow = new ConfigWindow(this.configuration, this.stateProvider);
+        var inputManager = new InputManager(keyState, this.configuration.ActionCamera);
+        var uiStateService = new UiStateService(gameGui);
+        var cursorManager = new CursorManager();
+        var cameraProvider = new FfxivClientStructsCameraProvider();
+        var cameraController = new CameraController(this.configuration.ActionCamera, cameraProvider);
+        var rmbLatchBackend = new RmbLatchCameraBackend();
+        var directBackend = new DirectCameraControlBackend(cameraController);
+        var softTargetService = new SoftTargetService(this.configuration.ActionCamera, objectTable, targetManager);
+        this.actionCameraPlugin = new ActionCameraPlugin(
+            this.configuration,
+            this.clientState,
+            this.objectTable,
+            inputManager,
+            uiStateService,
+            cursorManager,
+            targetManager,
+            cameraController,
+            rmbLatchBackend,
+            directBackend,
+            softTargetService,
+            pluginLog);
+        this.configWindow = new ConfigWindow(this.configuration, this.stateProvider, _ => { });
 
         this.commandManager.AddHandler(PluginCommands.MainCommand, PluginCommands.CreateCommand(this.ToggleConfig));
+        this.commandManager.AddHandler(
+            PluginCommands.ActionCameraCommand,
+            PluginCommands.CreateActionCameraCommand(this.ToggleActionCamera));
 
         pluginInterface.UiBuilder.Draw += this.DrawUi;
         pluginInterface.UiBuilder.OpenConfigUi += this.ToggleConfig;
         pluginInterface.UiBuilder.OpenMainUi += this.ToggleMainUi;
+        this.framework.Update += this.OnFrameworkUpdate;
     }
 
     public void Dispose()
@@ -108,11 +141,16 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.pluginInterface.UiBuilder.Draw -= this.DrawUi;
         this.pluginInterface.UiBuilder.OpenConfigUi -= this.ToggleConfig;
         this.pluginInterface.UiBuilder.OpenMainUi -= this.ToggleMainUi;
+        this.framework.Update -= this.OnFrameworkUpdate;
         this.commandManager.RemoveHandler(PluginCommands.MainCommand);
+        this.commandManager.RemoveHandler(PluginCommands.ActionCameraCommand);
+        this.actionCameraPlugin.Dispose();
     }
 
     private void DrawUi()
     {
+        this.ExecuteDrawSection("action camera update", this.actionCameraPlugin.Update);
+        this.ExecuteDrawSection("action camera late update", this.actionCameraPlugin.LateUpdate);
         this.ExecuteDrawSection("layout migration init", this.ApplyLayoutMigrationIfNeeded);
         this.ExecuteDrawSection("native UI visibility", this.ApplyNativeUiVisibility);
         this.ExecuteDrawSection("native minimap north-lock sync", this.ApplyMinimapNorthLockWhenCustom);
@@ -125,6 +163,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         this.ExecuteDrawSection("config draw", this.configWindow.Draw);
+        this.ExecuteDrawSection(
+            "action camera overlay",
+            () => ActionCameraOverlay.Draw(this.configuration.ActionCamera, this.actionCameraPlugin.RuntimeState));
     }
 
     private bool ShouldDrawHud()
@@ -173,6 +214,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.configuration.Enabled = !this.configuration.Enabled;
         this.configuration.Save();
     }
+
+    private void ToggleActionCamera()
+    {
+        this.actionCameraPlugin.Toggle();
+    }
+
+    private void OnFrameworkUpdate(IFramework _) { }
 
     private void ApplyNativeUiVisibility()
     {
