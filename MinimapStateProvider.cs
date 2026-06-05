@@ -111,6 +111,7 @@ public sealed class MinimapStateProvider
             var contentHalf = MinimapLayout.ClampSize(minimapSize) * 0.5f;
             var clampedMarkerSize = MinimapLayout.ClampMarkerIconSize(markerIconSize);
             var markerBudget = MinimapLayout.MaxNativeMarkersPerFrame;
+            var markerLimit = iconMarkers.Count + markerBudget;
 
             MinimapFlagMarkers.TryCollect(
                 contentHalf,
@@ -124,9 +125,9 @@ public sealed class MinimapStateProvider
                 clampedMarkerSize,
                 this.markerIconCache,
                 iconMarkers,
-                markerBudget);
+                markerLimit);
 
-            var remainingMarkerBudget = markerBudget - iconMarkers.Count;
+            var remainingMarkerBudget = markerLimit - iconMarkers.Count;
             if (remainingMarkerBudget > 0)
             {
                 MinimapTempMapMarkers.TryCollect(
@@ -141,8 +142,8 @@ public sealed class MinimapStateProvider
                     clampedMarkerSize,
                     this.markerIconCache,
                     iconMarkers,
-                    remainingMarkerBudget);
-                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+                    markerLimit);
+                remainingMarkerBudget = markerLimit - iconMarkers.Count;
             }
 
             if (remainingMarkerBudget > 0)
@@ -161,8 +162,8 @@ public sealed class MinimapStateProvider
                     clampedMarkerSize,
                     this.markerIconCache,
                     iconMarkers,
-                    remainingMarkerBudget);
-                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+                    markerLimit);
+                remainingMarkerBudget = markerLimit - iconMarkers.Count;
             }
 
             if (remainingMarkerBudget > 0)
@@ -179,8 +180,8 @@ public sealed class MinimapStateProvider
                     clampedMarkerSize,
                     this.markerIconCache,
                     iconMarkers,
-                    remainingMarkerBudget);
-                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+                    markerLimit);
+                remainingMarkerBudget = markerLimit - iconMarkers.Count;
             }
 
             if (remainingMarkerBudget > 0)
@@ -198,8 +199,8 @@ public sealed class MinimapStateProvider
                     this.markerIconCache,
                     iconMarkers,
                     fateAreas,
-                    remainingMarkerBudget);
-                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+                    markerLimit);
+                remainingMarkerBudget = markerLimit - iconMarkers.Count;
             }
 
             if (remainingMarkerBudget > 0)
@@ -216,8 +217,8 @@ public sealed class MinimapStateProvider
                     clampedMarkerSize,
                     this.markerIconCache,
                     iconMarkers,
-                    remainingMarkerBudget);
-                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+                    markerLimit);
+                remainingMarkerBudget = markerLimit - iconMarkers.Count;
             }
 
             if (remainingMarkerBudget > 0)
@@ -234,8 +235,8 @@ public sealed class MinimapStateProvider
                     clampedMarkerSize,
                     this.markerIconCache,
                     iconMarkers,
-                    remainingMarkerBudget);
-                remainingMarkerBudget = markerBudget - iconMarkers.Count;
+                    markerLimit);
+                remainingMarkerBudget = markerLimit - iconMarkers.Count;
                 // In city hubs, MapMarkers and MiniMapMarkers often overlap static services.
                 // Prefer NaviMapMarkers and only use MapMarkers as fallback when NaviMapMarkers produced none.
                 if (remainingMarkerBudget > 0 && naviMarkersAdded <= 0)
@@ -252,7 +253,7 @@ public sealed class MinimapStateProvider
                         clampedMarkerSize,
                         this.markerIconCache,
                         iconMarkers,
-                        remainingMarkerBudget);
+                        markerLimit);
                 }
             }
         }

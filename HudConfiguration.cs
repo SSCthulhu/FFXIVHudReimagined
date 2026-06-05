@@ -561,14 +561,30 @@ public sealed class HudConfiguration : IPluginConfiguration
         if (this.Version < 57)
         {
             this.ActionCamera ??= new ActionCameraConfiguration();
-            this.ActionCamera.BackendMode = ActionCameraBackendMode.RmbLatch;
-            this.ActionCamera.UnlockMode = ActionCameraUnlockMode.Toggle;
-            this.ActionCamera.ToggleUnlockKey = Dalamud.Game.ClientState.Keys.VirtualKey.CAPITAL;
-            this.ActionCamera.HoldUnlockKey = Dalamud.Game.ClientState.Keys.VirtualKey.LMENU;
-            this.ActionCamera.EscAlwaysUnlock = true;
-            this.ActionCamera.ReacquireOnToggle = true;
-            this.ActionCamera.EnableSoftTargetSuggestion = false;
-            this.ActionCamera.SoftTargetScreenRadius = 280f;
+            if (!Enum.IsDefined(typeof(ActionCameraBackendMode), this.ActionCamera.BackendMode))
+            {
+                this.ActionCamera.BackendMode = ActionCameraBackendMode.RmbLatch;
+            }
+
+            if (!Enum.IsDefined(typeof(ActionCameraUnlockMode), this.ActionCamera.UnlockMode))
+            {
+                this.ActionCamera.UnlockMode = ActionCameraUnlockMode.Toggle;
+            }
+
+            if (this.ActionCamera.ToggleUnlockKey == 0)
+            {
+                this.ActionCamera.ToggleUnlockKey = Dalamud.Game.ClientState.Keys.VirtualKey.CAPITAL;
+            }
+
+            if (this.ActionCamera.HoldUnlockKey == 0)
+            {
+                this.ActionCamera.HoldUnlockKey = Dalamud.Game.ClientState.Keys.VirtualKey.LMENU;
+            }
+
+            if (this.ActionCamera.SoftTargetScreenRadius <= 0f || !float.IsFinite(this.ActionCamera.SoftTargetScreenRadius))
+            {
+                this.ActionCamera.SoftTargetScreenRadius = 280f;
+            }
             this.Version = 57;
             didChange = true;
         }

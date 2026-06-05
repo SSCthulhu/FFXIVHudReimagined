@@ -41,6 +41,10 @@ internal sealed class SoftTargetService
         if (!this.config.EnableSoftTargetSuggestion)
         {
             this.candidate = default;
+            if (this.targetManager.SoftTarget is not null)
+            {
+                this.targetManager.SoftTarget = null;
+            }
             this.pendingObjectId = 0;
             this.pendingStableFrames = 0;
             this.lastAssignedObjectId = 0;
@@ -50,12 +54,14 @@ internal sealed class SoftTargetService
         if (!TryGetScreenCenter(out var screenCenter))
         {
             this.candidate = default;
+            this.ClearSoftTargetWhenNoCandidate();
             return;
         }
 
         if (!TryGetCameraConeData(out var cameraPos, out var cameraForward))
         {
             this.candidate = default;
+            this.ClearSoftTargetWhenNoCandidate();
             return;
         }
 
@@ -140,6 +146,7 @@ internal sealed class SoftTargetService
         else if (!this.candidate.HasCandidate)
         {
             // Keep previous soft target briefly to avoid repeated acquire/clear SFX while aim jitters.
+            this.ClearSoftTargetWhenNoCandidate();
             this.pendingObjectId = 0;
             this.pendingStableFrames = 0;
         }
@@ -171,6 +178,16 @@ internal sealed class SoftTargetService
         }
 
         return false;
+    }
+
+    private void ClearSoftTargetWhenNoCandidate()
+    {
+        if (this.targetManager.SoftTarget is null)
+        {
+            return;
+        }
+
+        this.targetManager.SoftTarget = null;
     }
 
     private static bool TryGetScreenCenter(out Vector2 center)

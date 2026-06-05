@@ -430,11 +430,9 @@ internal sealed class ActionCameraPlugin : IDisposable
                 }
                 this.cursorManager.Lock();
                 this.cursorManager.Hide();
-                this.ActiveBackend.Enable();
             }
             else
             {
-                this.ActiveBackend.Disable();
                 this.cursorManager.Unlock();
                 this.cursorManager.Show();
             }
