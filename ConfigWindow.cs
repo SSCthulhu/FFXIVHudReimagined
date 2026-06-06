@@ -11,6 +11,7 @@ public sealed class ConfigWindow
     private const float PresetButtonHeight = 36f;
 
     private readonly HudConfiguration config;
+    private readonly AetherPlates.UI.ConfigWindow aetherPlatesConfigWindow;
     private readonly Action<ActionCameraConfiguration>? onActionCameraConfigChanged;
     private readonly HudStateProvider? stateProvider;
     private string customLayoutNameBuffer = string.Empty;
@@ -28,6 +29,9 @@ public sealed class ConfigWindow
         this.config = config;
         this.stateProvider = stateProvider;
         this.onActionCameraConfigChanged = onActionCameraConfigChanged;
+        this.aetherPlatesConfigWindow = new AetherPlates.UI.ConfigWindow(
+            this.config.AetherPlates,
+            this.config.Save);
         this.SyncCustomLayoutSelectionIndex();
     }
 
@@ -123,6 +127,11 @@ public sealed class ConfigWindow
         {
             this.selectedTab = ConfigSettingsTab.ActionCamera;
         }
+
+        if (this.DrawSettingsNavButton(ConfigSettingsTab.Nameplates, "Nameplate Settings"))
+        {
+            this.selectedTab = ConfigSettingsTab.Nameplates;
+        }
     }
 
     private bool DrawSettingsNavButton(ConfigSettingsTab tab, string label)
@@ -163,10 +172,18 @@ public sealed class ConfigWindow
             case ConfigSettingsTab.ActionCamera:
                 this.DrawActionCameraSettingsTab();
                 break;
+            case ConfigSettingsTab.Nameplates:
+                this.DrawNameplateSettingsTab();
+                break;
             default:
                 this.DrawGeneralSettingsTab();
                 break;
         }
+    }
+
+    private void DrawNameplateSettingsTab()
+    {
+        this.aetherPlatesConfigWindow.DrawSection();
     }
 
     private void DrawActionCameraSettingsTab()
@@ -181,12 +198,7 @@ public sealed class ConfigWindow
 
         var actionConfig = this.config.ActionCamera;
 
-        var backendMode = actionConfig.BackendMode;
-        if (this.DrawActionCameraBackendCombo(ref backendMode))
-        {
-            actionConfig.BackendMode = backendMode;
-            this.NotifyActionCameraConfigChanged();
-        }
+        ImGui.TextColored(0xFF9AA1AB, "Camera Backend: RMB Latch");
 
         var enabled = actionConfig.Enabled;
         if (DrawSettingCheckbox("Enable Action Camera", ref enabled))
@@ -221,26 +233,11 @@ public sealed class ConfigWindow
             }
         }
 
-        var unlockOnUi = actionConfig.UnlockOnUi;
-        if (DrawSettingCheckbox("Auto Unlock During UI Interaction", ref unlockOnUi))
-        {
-            actionConfig.UnlockOnUi = unlockOnUi;
-            this.NotifyActionCameraConfigChanged();
-        }
+        ImGui.TextColored(0xFF9AA1AB, "Auto Unlock During UI Interaction: Always On");
+        ImGui.TextColored(0xFF9AA1AB, "Escape Always Unlocks Cursor: Always On");
 
-        var escAlwaysUnlock = actionConfig.EscAlwaysUnlock;
-        if (DrawSettingCheckbox("Escape Always Unlocks Cursor", ref escAlwaysUnlock))
-        {
-            actionConfig.EscAlwaysUnlock = escAlwaysUnlock;
-            this.NotifyActionCameraConfigChanged();
-        }
-
-        var reacquireOnToggle = actionConfig.ReacquireOnToggle;
-        if (DrawSettingCheckbox("Reacquire On Toggle Key", ref reacquireOnToggle))
-        {
-            actionConfig.ReacquireOnToggle = reacquireOnToggle;
-            this.NotifyActionCameraConfigChanged();
-        }
+        ImGui.TextColored(0xFF9AA1AB, "Reacquire On Toggle Key: Internal Setting");
+        ImGui.TextColored(0xFF9AA1AB, "Prevent RMB Camera Disruption: Internal Setting");
 
         var showReticle = actionConfig.ShowReticle;
         if (DrawSettingCheckbox("Show Center Reticle", ref showReticle))
@@ -313,21 +310,6 @@ public sealed class ConfigWindow
         }
 
         mode = index == 1 ? ActionCameraUnlockMode.Toggle : ActionCameraUnlockMode.Hold;
-        return true;
-    }
-
-    private bool DrawActionCameraBackendCombo(ref ActionCameraBackendMode mode)
-    {
-        var index = mode == ActionCameraBackendMode.DirectExperimental ? 1 : 0;
-        var labels = new[] { "RMB Latch (Recommended)", "Direct Experimental" };
-        if (!ImGui.Combo("Camera Backend", ref index, labels, labels.Length))
-        {
-            return false;
-        }
-
-        mode = index == 1
-            ? ActionCameraBackendMode.DirectExperimental
-            : ActionCameraBackendMode.RmbLatch;
         return true;
     }
 
@@ -1532,5 +1514,6 @@ public sealed class ConfigWindow
         BuffDebuff = 3,
         Minimap = 4,
         ActionCamera = 5,
+        Nameplates = 6,
     }
 }

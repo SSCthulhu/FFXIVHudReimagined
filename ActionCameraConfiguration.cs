@@ -59,6 +59,11 @@ public sealed class ActionCameraConfiguration
     public bool ReacquireOnToggle { get; set; } = true;
 
     /// <summary>
+    /// Reasserts RMB latch after physical RMB release to prevent camera disruption.
+    /// </summary>
+    public bool PreventRmbDisruption { get; set; } = true;
+
+    /// <summary>
     /// Draws a center reticle while action camera is active.
     /// </summary>
     public bool ShowReticle { get; set; }

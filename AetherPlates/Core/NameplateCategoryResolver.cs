@@ -18,6 +18,11 @@ internal static class NameplateCategoryResolver
             return NameplateManager.NameplateCategory.Minion;
         }
 
+        if (obj.Kind == ObjectKind.EventNpc)
+        {
+            return NameplateManager.NameplateCategory.Npc;
+        }
+
         if (obj.Kind is ObjectKind.GatheringPoint or ObjectKind.Treasure or ObjectKind.EventObj)
         {
             return NameplateManager.NameplateCategory.Object;
@@ -29,6 +34,19 @@ internal static class NameplateCategoryResolver
         }
 
         var subKind = (BattleNpcSubKind)obj.SubKind;
+
+        if (obj.Kind == ObjectKind.BattleNpc &&
+            (subKind == BattleNpcSubKind.Pet || subKind == BattleNpcSubKind.Buddy))
+        {
+            return ResolveFriendlyBattleNpcCategory(obj, localPlayerId, ownerLookup);
+        }
+
+        if (obj.Kind == ObjectKind.BattleNpc &&
+            (subKind == BattleNpcSubKind.Combatant || subKind == BattleNpcSubKind.BNpcPart))
+        {
+            return ResolveEnemyCategory(obj);
+        }
+
         if (subKind == BattleNpcSubKind.NpcPartyMember)
         {
             // Duty Support / Trust actors should follow NPC category mapping.
@@ -62,7 +80,11 @@ internal static class NameplateCategoryResolver
                 case NamePlateKind.PlayerCharacter:
                     return NameplateManager.NameplateCategory.OtherPc;
                 case NamePlateKind.BattleNpcEnemy:
-                    return NameplateManager.NameplateCategory.Enemy;
+                    if (obj.Kind == ObjectKind.BattleNpc && (subKind == BattleNpcSubKind.Pet || subKind == BattleNpcSubKind.Buddy))
+                    {
+                        return ResolveFriendlyBattleNpcCategory(obj, localPlayerId, ownerLookup);
+                    }
+                    return ResolveEnemyCategory(obj);
                 case NamePlateKind.BattleNpcFriendly:
                     return ResolveFriendlyBattleNpcCategory(obj, localPlayerId, ownerLookup);
                 case NamePlateKind.EventObject:
@@ -76,7 +98,7 @@ internal static class NameplateCategoryResolver
 
         if (obj.IsHostile)
         {
-            return NameplateManager.NameplateCategory.Enemy;
+            return ResolveEnemyCategory(obj);
         }
 
         return ResolveFriendlyBattleNpcCategory(obj, localPlayerId, ownerLookup);
@@ -131,7 +153,13 @@ internal static class NameplateCategoryResolver
 
         if (nativeKind == NamePlateKind.BattleNpcEnemy)
         {
-            return NameplateManager.NameplateCategory.Enemy;
+            if (gameObject is IBattleNpc npc &&
+                (npc.BattleNpcKind == BattleNpcSubKind.Pet || npc.BattleNpcKind == BattleNpcSubKind.Buddy))
+            {
+                return NameplateManager.NameplateCategory.OtherPet;
+            }
+
+            return NameplateManager.NameplateCategory.EnemyUnengaged;
         }
 
         if (nativeKind == NamePlateKind.BattleNpcFriendly)
@@ -148,6 +176,8 @@ internal static class NameplateCategoryResolver
         IReadOnlyDictionary<ulong, TrackedObject> ownerLookup)
     {
         var subKind = (BattleNpcSubKind)obj.SubKind;
+        var isCompanion = subKind == BattleNpcSubKind.Buddy;
+        var isPet = subKind == BattleNpcSubKind.Pet;
         if (subKind == BattleNpcSubKind.NpcPartyMember)
         {
             return NameplateManager.NameplateCategory.Npc;
@@ -157,49 +187,110 @@ internal static class NameplateCategoryResolver
         {
             if (owner.IsPlayerCharacter || owner.ObjectId == localPlayerId)
             {
-                return subKind == BattleNpcSubKind.Buddy
-                    ? NameplateManager.NameplateCategory.SelfCompanion
-                    : NameplateManager.NameplateCategory.SelfPet;
+                if (isCompanion)
+                {
+                    return NameplateManager.NameplateCategory.SelfCompanion;
+                }
+
+                if (isPet)
+                {
+                    return NameplateManager.NameplateCategory.SelfPet;
+                }
+
+                return NameplateManager.NameplateCategory.Npc;
             }
 
             if (owner.IsPartyMember)
             {
-                return subKind == BattleNpcSubKind.Buddy
-                    ? NameplateManager.NameplateCategory.PartyCompanion
-                    : NameplateManager.NameplateCategory.PartyPet;
+                if (isCompanion)
+                {
+                    return NameplateManager.NameplateCategory.PartyCompanion;
+                }
+
+                if (isPet)
+                {
+                    return NameplateManager.NameplateCategory.PartyPet;
+                }
+
+                return NameplateManager.NameplateCategory.Npc;
             }
 
             if (owner.IsAllianceMember)
             {
-                return NameplateManager.NameplateCategory.AlliancePet;
+                return isCompanion || isPet
+                    ? NameplateManager.NameplateCategory.AlliancePet
+                    : NameplateManager.NameplateCategory.Npc;
             }
 
             if (owner.IsFriend)
             {
-                return subKind == BattleNpcSubKind.Buddy
-                    ? NameplateManager.NameplateCategory.FriendCompanion
-                    : NameplateManager.NameplateCategory.FriendPet;
+                if (isCompanion)
+                {
+                    return NameplateManager.NameplateCategory.FriendCompanion;
+                }
+
+                if (isPet)
+                {
+                    return NameplateManager.NameplateCategory.FriendPet;
+                }
+
+                return NameplateManager.NameplateCategory.Npc;
             }
 
-            return subKind == BattleNpcSubKind.Buddy
-                ? NameplateManager.NameplateCategory.OtherCompanion
-                : NameplateManager.NameplateCategory.OtherPet;
+            if (isCompanion)
+            {
+                return NameplateManager.NameplateCategory.OtherCompanion;
+            }
+
+            if (isPet)
+            {
+                return NameplateManager.NameplateCategory.OtherPet;
+            }
+
+            return NameplateManager.NameplateCategory.Npc;
         }
 
         if (obj.OwnerId != 0)
         {
             if (obj.OwnerId == localPlayerId)
             {
-                return subKind == BattleNpcSubKind.Buddy
-                    ? NameplateManager.NameplateCategory.SelfCompanion
-                    : NameplateManager.NameplateCategory.SelfPet;
+                if (isCompanion)
+                {
+                    return NameplateManager.NameplateCategory.SelfCompanion;
+                }
+
+                if (isPet)
+                {
+                    return NameplateManager.NameplateCategory.SelfPet;
+                }
+
+                return NameplateManager.NameplateCategory.Npc;
             }
 
-            return subKind == BattleNpcSubKind.Buddy
-                ? NameplateManager.NameplateCategory.OtherCompanion
-                : NameplateManager.NameplateCategory.OtherPet;
+            if (isCompanion)
+            {
+                return NameplateManager.NameplateCategory.OtherCompanion;
+            }
+
+            if (isPet)
+            {
+                return NameplateManager.NameplateCategory.OtherPet;
+            }
         }
 
         return NameplateManager.NameplateCategory.Npc;
+    }
+
+    private static NameplateManager.NameplateCategory ResolveEnemyCategory(TrackedObject obj)
+    {
+        return obj.EnemyState switch
+        {
+            EnemyNameplateState.Engaged => NameplateManager.NameplateCategory.EnemyEngaged,
+            EnemyNameplateState.Claimed => NameplateManager.NameplateCategory.EnemyClaimed,
+            EnemyNameplateState.Unclaimed => NameplateManager.NameplateCategory.EnemyUnclaimed,
+            EnemyNameplateState.Feast => NameplateManager.NameplateCategory.EnemyFeast,
+            EnemyNameplateState.FeastPet => NameplateManager.NameplateCategory.EnemyFeastPet,
+            _ => NameplateManager.NameplateCategory.EnemyUnengaged,
+        };
     }
 }

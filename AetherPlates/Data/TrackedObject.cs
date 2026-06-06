@@ -3,6 +3,17 @@ using Dalamud.Game.ClientState.Objects.Enums;
 
 namespace FFXIVHudPlugin.AetherPlates.Data;
 
+public enum EnemyNameplateState : byte
+{
+    Unknown = 0,
+    Unengaged = 1,
+    Engaged = 2,
+    Claimed = 3,
+    Unclaimed = 4,
+    Feast = 5,
+    FeastPet = 6,
+}
+
 public sealed record TrackedObject(
     ulong ObjectId,
     uint EntityId,
@@ -25,6 +36,7 @@ public sealed record TrackedObject(
     bool IsPartyMember,
     bool IsAllianceMember,
     bool IsFriend,
+    EnemyNameplateState EnemyState,
     ulong OwnerId,
     byte SubKind,
     bool IsPlayerCharacter,

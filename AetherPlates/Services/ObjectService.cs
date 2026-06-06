@@ -7,6 +7,7 @@ using Lumina.Excel.Sheets;
 using Dalamud.Plugin.Services;
 using FFXIVHudPlugin.AetherPlates.Data;
 using System.Numerics;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
 
 namespace FFXIVHudPlugin.AetherPlates.Services;
 
@@ -72,13 +73,13 @@ public sealed class ObjectService
         out TrackedObject tracked)
     {
         tracked = null!;
-        var objectId = unchecked((ulong)obj.GameObjectId);
-        if (objectId == 0 || objectId == 0xE0000000)
+        var objectId = ResolveStableObjectId(obj);
+        if (objectId == 0)
         {
             return false;
         }
 
-        if (!obj.IsTargetable && obj.ObjectKind != ObjectKind.Companion)
+        if (!ShouldTrackObject(obj))
         {
             return false;
         }
@@ -98,7 +99,7 @@ public sealed class ObjectService
 
         var currentHp = character?.CurrentHp ?? 1u;
         var maxHp = character?.MaxHp ?? 1u;
-        if (isCharacter && maxHp == 0)
+        if (isCharacter && maxHp == 0 && obj.ObjectKind is not ObjectKind.EventNpc and not ObjectKind.Companion)
         {
             return false;
         }
@@ -114,7 +115,11 @@ public sealed class ObjectService
                          isPartyMember ||
                          (statusFlags & (StatusFlags.AllianceMember | StatusFlags.Friend)) != 0 ||
                          obj.ObjectKind == ObjectKind.Pc;
-        var isHostile = obj.ObjectKind == ObjectKind.BattleNpc && !isFriendly;
+        var subKind = (BattleNpcSubKind)obj.SubKind;
+        var isOwnedBattleCompanion = obj.ObjectKind == ObjectKind.BattleNpc &&
+                                     (subKind == BattleNpcSubKind.Pet || subKind == BattleNpcSubKind.Buddy);
+        var isHostile = obj.ObjectKind == ObjectKind.BattleNpc && !isFriendly && !isOwnedBattleCompanion;
+        var enemyState = ResolveEnemyState(obj, character, isHostile);
         var shieldRatio = Math.Clamp((character?.ShieldPercentage ?? 0) / 100f, 0f, 1f);
 
         tracked = new TrackedObject(
@@ -139,12 +144,46 @@ public sealed class ObjectService
             isPartyMember,
             (statusFlags & StatusFlags.AllianceMember) != 0,
             (statusFlags & StatusFlags.Friend) != 0,
+            enemyState,
             obj.OwnerId,
             obj.SubKind,
             isPlayerCharacter,
             statuses,
             cast);
         return true;
+    }
+
+    private static bool ShouldTrackObject(IGameObject obj)
+    {
+        if (obj.ObjectKind == ObjectKind.Companion || obj.ObjectKind == ObjectKind.EventNpc)
+        {
+            return true;
+        }
+
+        if (obj.ObjectKind is ObjectKind.GatheringPoint or ObjectKind.Treasure or ObjectKind.EventObj)
+        {
+            return true;
+        }
+
+        return obj.IsTargetable;
+    }
+
+    private static ulong ResolveStableObjectId(IGameObject obj)
+    {
+        var rawId = unchecked((ulong)obj.GameObjectId);
+        if (rawId != 0 && rawId != 0xE0000000)
+        {
+            return rawId;
+        }
+
+        if (obj.Address == nint.Zero)
+        {
+            return 0;
+        }
+
+        // Some world NPC/minion entries use pseudo IDs. Use address-based fallback identity so
+        // nameplate tracking remains stable for rendering and category resolution.
+        return 0xF000000000000000UL | ((ulong)obj.Address & 0x0FFFFFFFFFFFFFFFUL);
     }
 
     private static string ResolveName(IGameObject obj, ICharacter? character)
@@ -166,6 +205,32 @@ public sealed class ObjectService
             ObjectKind.Treasure => "Treasure",
             ObjectKind.EventObj => "Event Object",
             _ => string.Empty,
+        };
+    }
+
+    private static unsafe EnemyNameplateState ResolveEnemyState(
+        IGameObject obj,
+        ICharacter? character,
+        bool isHostile)
+    {
+        if (!isHostile || character is null || obj.ObjectKind != ObjectKind.BattleNpc)
+        {
+            return EnemyNameplateState.Unknown;
+        }
+
+        var chara = (Character*)obj.Address;
+        if (chara == null)
+        {
+            return EnemyNameplateState.Unengaged;
+        }
+
+        return chara->GetNamePlateColorType() switch
+        {
+            7 => EnemyNameplateState.Unengaged,
+            9 => EnemyNameplateState.Engaged,
+            10 => EnemyNameplateState.Claimed,
+            11 => EnemyNameplateState.Unclaimed,
+            _ => EnemyNameplateState.Unengaged,
         };
     }
 

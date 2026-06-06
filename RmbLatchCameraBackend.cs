@@ -7,12 +7,19 @@ namespace FFXIVHudPlugin;
 /// </summary>
 internal sealed class RmbLatchCameraBackend : ICameraControlBackend
 {
+    private const int VKeyRButton = 0x02;
+
+    private readonly ActionCameraConfiguration config;
     private bool enabled;
     private bool latchedRmb;
+    private bool previousPhysicalRmbDown;
     private float yaw;
     private float pitch;
 
-    public RmbLatchCameraBackend() { }
+    public RmbLatchCameraBackend(ActionCameraConfiguration config)
+    {
+        this.config = config;
+    }
 
     public string Name => "RmbLatch";
 
@@ -21,6 +28,7 @@ internal sealed class RmbLatchCameraBackend : ICameraControlBackend
     public void Enable()
     {
         this.enabled = true;
+        this.previousPhysicalRmbDown = this.IsPhysicalRightMouseDown();
         this.EnsureLatched();
     }
 
@@ -28,6 +36,7 @@ internal sealed class RmbLatchCameraBackend : ICameraControlBackend
     {
         this.ReleaseLatch();
         this.enabled = false;
+        this.previousPhysicalRmbDown = false;
     }
 
     public void Tick(float deltaX, float deltaY)
@@ -37,7 +46,7 @@ internal sealed class RmbLatchCameraBackend : ICameraControlBackend
             return;
         }
 
-        this.EnsureLatched();
+        this.MaintainLatchState();
 
         // This backend intentionally tracks pseudo yaw/pitch for diagnostics while relying
         // on RMB-latch semantics for actual game camera behavior.
@@ -71,6 +80,34 @@ internal sealed class RmbLatchCameraBackend : ICameraControlBackend
         this.latchedRmb = true;
     }
 
+    private void MaintainLatchState()
+    {
+        var physicalRmbDown = this.IsPhysicalRightMouseDown();
+        if (!this.config.PreventRmbDisruption)
+        {
+            this.previousPhysicalRmbDown = physicalRmbDown;
+            return;
+        }
+
+        if (this.previousPhysicalRmbDown && !physicalRmbDown)
+        {
+            this.RelatchPulse();
+        }
+
+        this.previousPhysicalRmbDown = physicalRmbDown;
+    }
+
+    private void RelatchPulse()
+    {
+        // A physical RMB-up can clear camera-hold state even though we think we're latched.
+        // Emit a deterministic up->down pulse so latch state is always restored after release.
+        mouse_event(MouseEventfRightUp, 0, 0, 0, 0);
+        mouse_event(MouseEventfRightDown, 0, 0, 0, 0);
+        this.latchedRmb = true;
+    }
+
+    private bool IsPhysicalRightMouseDown() => (GetAsyncKeyState(VKeyRButton) & 0x8000) != 0;
+
     private void ReleaseLatch()
     {
         if (!this.latchedRmb)
@@ -87,4 +124,7 @@ internal sealed class RmbLatchCameraBackend : ICameraControlBackend
 
     [DllImport("user32.dll", SetLastError = false)]
     private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, nuint dwExtraInfo);
+
+    [DllImport("user32.dll", SetLastError = false)]
+    private static extern short GetAsyncKeyState(int vKey);
 }

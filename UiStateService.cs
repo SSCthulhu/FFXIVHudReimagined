@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace FFXIVHudPlugin;
@@ -34,6 +35,26 @@ internal sealed class UiStateService
     public bool IsMainMenuOpen =>
         this.IsAddonVisible("_MainCommand") ||
         this.IsAddonVisible("MainCommand");
+
+    public unsafe bool TryOpenSystemMenu()
+    {
+        if (this.IsMainMenuOpen)
+        {
+            return true;
+        }
+
+        var agentHud = AgentHUD.Instance();
+        if (agentHud is null)
+        {
+            return false;
+        }
+
+        return agentHud->HandleMainCommandOperation(
+            MainCommandOperation.OpenSystemMenu,
+            0u,
+            -1,
+            null);
+    }
 
     private unsafe bool IsAddonVisible(string addonName)
     {

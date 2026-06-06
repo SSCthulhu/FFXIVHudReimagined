@@ -2,7 +2,11 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Keys;
+using Dalamud.Game.Addon.Lifecycle;
+using Dalamud.Game.Gui.NamePlate;
+using FFXIVHudPlugin.AetherPlates.Core;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using System.Numerics;
 
 namespace FFXIVHudPlugin;
 
@@ -20,11 +24,19 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private readonly IObjectTable objectTable;
     private readonly IPluginLog pluginLog;
     private readonly IFramework framework;
+    private readonly IAddonLifecycle addonLifecycle;
+    private readonly INamePlateGui namePlateGui;
+    private readonly ITextureProvider textureProvider;
+    private readonly ITargetManager targetManager;
+    private readonly IPartyList partyList;
+    private readonly IDataManager dataManager;
     private readonly HudConfiguration configuration;
     private readonly HudStateProvider stateProvider;
     private readonly HudWindow hudWindow;
     private readonly ConfigWindow configWindow;
     private readonly ActionCameraPlugin actionCameraPlugin;
+    private readonly AetherPlates.Core.NameplateManager nameplateManager;
+    private readonly AetherPlates.Services.NativeNameplateAnchorService nativeNameplateAnchorService;
     private DateTime hideHudUntilUtc = DateTime.MinValue;
     private DateTime nextDrawErrorLogUtc = DateTime.MinValue;
     private bool nativeUiHiddenApplied;
@@ -32,8 +44,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private bool nativeNorthLockCaptured;
     private bool nativeNorthLockApplied;
     private bool nativeNorthLockOriginal;
+    private bool nativeCastBarSuppressed;
+    private bool nativeCastBarOriginalPosCaptured;
+    private Vector2 nativeCastBarOriginalPos;
     private int suppressedDrawErrors;
     private bool isDisposed;
+    private string lastSelfNativeSuppressionState = "inactive";
     private static readonly string[] NativeUiAddonNamesToHide =
     {
         "_ActionBar",
@@ -57,7 +73,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
         "_StatusCustom4",
         "_LimitBreak",
     };
-
     public Plugin(
         IDalamudPluginInterface pluginInterface,
         ICommandManager commandManager,
@@ -65,6 +80,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         ICondition condition,
         IObjectTable objectTable,
         IFramework framework,
+        IAddonLifecycle addonLifecycle,
+        INamePlateGui namePlateGui,
         IKeyState keyState,
         IGameGui gameGui,
         ITargetManager targetManager,
@@ -79,10 +96,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.condition = condition;
         this.objectTable = objectTable;
         this.framework = framework;
+        this.addonLifecycle = addonLifecycle;
+        this.namePlateGui = namePlateGui;
+        this.textureProvider = textureProvider;
+        this.targetManager = targetManager;
+        this.partyList = partyList;
+        this.dataManager = dataManager;
         this.pluginLog = pluginLog;
         this.configuration = pluginInterface.GetPluginConfig() as HudConfiguration ?? new HudConfiguration();
         this.configuration.Initialize(pluginInterface);
-
         this.stateProvider = new HudStateProvider(
             objectTable,
             dataManager,
@@ -98,7 +120,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var cursorManager = new CursorManager();
         var cameraProvider = new FfxivClientStructsCameraProvider();
         var cameraController = new CameraController(this.configuration.ActionCamera, cameraProvider);
-        var rmbLatchBackend = new RmbLatchCameraBackend();
+        var rmbLatchBackend = new RmbLatchCameraBackend(this.configuration.ActionCamera);
         var directBackend = new DirectCameraControlBackend(cameraController);
         var softTargetService = new SoftTargetService(this.configuration.ActionCamera, objectTable, partyList, targetManager);
         this.actionCameraPlugin = new ActionCameraPlugin(
@@ -115,6 +137,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             softTargetService,
             pluginLog);
         this.configWindow = new ConfigWindow(this.configuration, this.stateProvider, _ => { });
+        this.nativeNameplateAnchorService = new AetherPlates.Services.NativeNameplateAnchorService(
+            this.namePlateGui);
+        this.nameplateManager = this.CreateNameplateManager();
 
         this.commandManager.AddHandler(PluginCommands.MainCommand, PluginCommands.CreateCommand(this.ToggleConfig));
         this.commandManager.AddHandler(
@@ -145,6 +170,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.commandManager.RemoveHandler(PluginCommands.MainCommand);
         this.commandManager.RemoveHandler(PluginCommands.ActionCameraCommand);
         this.actionCameraPlugin.Dispose();
+        this.nativeNameplateAnchorService.Dispose();
     }
 
     private void DrawUi()
@@ -163,6 +189,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         this.ExecuteDrawSection("config draw", this.configWindow.Draw);
+        this.ExecuteDrawSection("aetherplates draw", this.nameplateManager.UpdateAndDraw);
         this.ExecuteDrawSection(
             "action camera overlay",
             () => ActionCameraOverlay.Draw(this.configuration.ActionCamera, this.actionCameraPlugin.RuntimeState));
@@ -232,6 +259,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             if (this.nativeUiHiddenApplied)
             {
                 this.SetNativeUiVisibility(true);
+                this.UpdateNativeCastBarSuppression(false);
                 NativeMinimapVisibility.SetVisible(true);
                 this.nativeUiHiddenApplied = false;
             }
@@ -241,6 +269,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
         }
 
+        this.UpdateNativeNameplateVisibility();
+
         if (!this.configuration.Enabled)
         {
             if (!this.nativeUiHiddenApplied)
@@ -249,12 +279,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
 
             this.SetNativeUiVisibility(true);
+            this.UpdateNativeCastBarSuppression(false);
             NativeMinimapVisibility.SetVisible(true);
             this.nativeUiHiddenApplied = false;
             return;
         }
 
         this.SetNativeUiVisibility(false);
+        this.UpdateNativeCastBarSuppression(true);
         NativeMinimapVisibility.SetVisible(!this.configuration.MinimapEnabled);
         this.nativeUiHiddenApplied = true;
     }
@@ -294,6 +326,21 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
             addon->IsVisible = visible;
         }
+    }
+
+    private void UpdateNativeNameplateVisibility()
+    {
+        this.lastSelfNativeSuppressionState = this.configuration.AetherPlates.Enabled
+            ? "native-config=unmanaged"
+            : "plugin=off";
+    }
+
+    private void UpdateNativeNameplateConfigSuppression(AetherPlates.Configuration.PluginConfiguration aetherPlates)
+    {
+        // Native nameplate character-config options are user-owned and never modified by this plugin.
+        this.lastSelfNativeSuppressionState = aetherPlates.Enabled
+            ? "native-config=unmanaged"
+            : "plugin=off";
     }
 
     private void ApplyLayoutMigrationIfNeeded()
@@ -350,11 +397,91 @@ public sealed unsafe class Plugin : IDalamudPlugin
     {
         this.ExecuteDrawSection("native UI restore", () =>
         {
+            this.UpdateNativeCastBarSuppression(false);
             this.SetNativeUiVisibility(true);
             NativeMinimapVisibility.SetVisible(true);
             this.nativeUiHiddenApplied = false;
             this.RestoreNativeNorthLockState();
         });
+    }
+
+    private void UpdateNativeCastBarSuppression(bool suppress)
+    {
+        if (suppress)
+        {
+            if (this.nativeCastBarSuppressed)
+            {
+                return;
+            }
+
+            this.addonLifecycle.RegisterListener(AddonEvent.PreDraw, "_CastBar", (_, args) =>
+            {
+                var addon = (AtkUnitBase*)args.Addon.Address;
+                this.HideCastBarOffscreen(addon);
+            });
+            this.nativeCastBarSuppressed = true;
+
+            // Apply immediately if castbar is already present this frame.
+            var stage = AtkStage.Instance();
+            var manager = stage is null ? null : stage->RaptureAtkUnitManager;
+            var addonNow = manager is null ? null : manager->GetAddonByName("_CastBar", 1);
+            this.HideCastBarOffscreen(addonNow);
+            return;
+        }
+
+        if (!this.nativeCastBarSuppressed)
+        {
+            return;
+        }
+
+        this.addonLifecycle.UnregisterListener(AddonEvent.PreDraw, "_CastBar");
+        this.nativeCastBarSuppressed = false;
+        this.TryRestoreCastBarPosition();
+    }
+
+    private void HideCastBarOffscreen(AtkUnitBase* addon)
+    {
+        if (addon is null || addon->RootNode is null)
+        {
+            return;
+        }
+
+        if (!this.nativeCastBarOriginalPosCaptured)
+        {
+            this.nativeCastBarOriginalPos = new Vector2(
+                addon->RootNode->GetXFloat(),
+                addon->RootNode->GetYFloat());
+            this.nativeCastBarOriginalPosCaptured = true;
+        }
+
+        addon->RootNode->SetPositionFloat(-9999f, -9999f);
+    }
+
+    private void TryRestoreCastBarPosition()
+    {
+        if (!this.nativeCastBarOriginalPosCaptured)
+        {
+            return;
+        }
+
+        var stage = AtkStage.Instance();
+        if (stage is null)
+        {
+            this.nativeCastBarOriginalPosCaptured = false;
+            this.nativeCastBarOriginalPos = Vector2.Zero;
+            return;
+        }
+
+        var addon = stage->RaptureAtkUnitManager->GetAddonByName("_CastBar", 1);
+        if (addon is not null && addon->RootNode is not null)
+        {
+            addon->RootNode->SetPositionFloat(
+                this.nativeCastBarOriginalPos.X,
+                this.nativeCastBarOriginalPos.Y);
+        }
+
+        this.nativeCastBarOriginalPosCaptured = false;
+        this.nativeCastBarOriginalPos = Vector2.Zero;
     }
 
     private void ExecuteDrawSection(string sectionName, Action drawAction)
@@ -386,5 +513,36 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         this.suppressedDrawErrors++;
+    }
+
+    private AetherPlates.Core.NameplateManager CreateNameplateManager()
+    {
+        var widgetRegistry = new AetherPlates.Widgets.WidgetRegistry();
+        AetherPlates.Widgets.WidgetRegistration.RegisterBuiltIns(widgetRegistry);
+
+        var styleManager = new AetherPlates.Styles.StyleManager(this.configuration.AetherPlates.GetActiveStyles);
+        var layoutEngine = new AetherPlates.Layout.LayoutEngine();
+        var renderer = new AetherPlates.Rendering.ImGuiRenderer();
+        var objectService = new AetherPlates.Services.ObjectService(
+            this.objectTable,
+            this.targetManager,
+            this.partyList,
+            this.clientState,
+            this.dataManager);
+        var tracker = new AetherPlates.Core.NameplateTracker(objectService);
+        var projectionService = new AetherPlates.Services.ProjectionService();
+        var nameplateRenderer = new AetherPlates.Core.NameplateRenderer(
+            widgetRegistry,
+            layoutEngine,
+            styleManager,
+            renderer);
+
+        return new AetherPlates.Core.NameplateManager(
+            tracker,
+            nameplateRenderer,
+            projectionService,
+            this.nativeNameplateAnchorService,
+            this.textureProvider,
+            this.configuration.AetherPlates);
     }
 }

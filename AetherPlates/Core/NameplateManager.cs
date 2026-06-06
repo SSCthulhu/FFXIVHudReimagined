@@ -27,7 +27,12 @@ public sealed class NameplateManager
         OtherPc,
         OtherCompanion,
         OtherPet,
-        Enemy,
+        EnemyUnengaged,
+        EnemyEngaged,
+        EnemyClaimed,
+        EnemyUnclaimed,
+        EnemyFeast,
+        EnemyFeastPet,
         Npc,
         Object,
         Minion,
@@ -118,8 +123,20 @@ public sealed class NameplateManager
                 continue;
             }
 
+            if (this.RequiresNativePresence(category) && !this.nativeAnchorService.IsInCurrentNativeSet(obj.ObjectId))
+            {
+                // NPC/minion/object-like categories should only be rendered when the game currently has
+                // an active native nameplate for that actor; this prevents phantom labels from cache/projection.
+                continue;
+            }
+
             var categoryVisual = this.configuration.GetVisualSettingsForCategory(category);
-            var isHostile = category == NameplateCategory.Enemy;
+            var isHostile = category is NameplateCategory.EnemyUnengaged
+                or NameplateCategory.EnemyEngaged
+                or NameplateCategory.EnemyClaimed
+                or NameplateCategory.EnemyUnclaimed
+                or NameplateCategory.EnemyFeast
+                or NameplateCategory.EnemyFeastPet;
             var isFriendly = !isHostile && category != NameplateCategory.Self;
 
             if (this.configuration.EnableDistanceCulling &&
@@ -199,7 +216,12 @@ public sealed class NameplateManager
 
     private bool IsCombatRelevant(TrackedObject obj, NameplateCategory category, bool isHostile)
     {
-        if (category == NameplateCategory.Enemy || isHostile)
+        if (category is NameplateCategory.EnemyUnengaged
+            or NameplateCategory.EnemyEngaged
+            or NameplateCategory.EnemyClaimed
+            or NameplateCategory.EnemyUnclaimed
+            or NameplateCategory.EnemyFeast
+            or NameplateCategory.EnemyFeastPet || isHostile)
         {
             return true;
         }
@@ -231,7 +253,12 @@ public sealed class NameplateManager
             NameplateCategory.OtherPc => c.OtherPc,
             NameplateCategory.OtherCompanion => c.OtherCompanion,
             NameplateCategory.OtherPet => c.OtherPet,
-            NameplateCategory.Enemy => c.IsAnyEnemyEnabled(),
+            NameplateCategory.EnemyUnengaged => c.EnemyUnengaged,
+            NameplateCategory.EnemyEngaged => c.EnemyEngaged,
+            NameplateCategory.EnemyClaimed => c.EnemyClaimed,
+            NameplateCategory.EnemyUnclaimed => c.EnemyUnclaimed,
+            NameplateCategory.EnemyFeast => c.EnemyFeast,
+            NameplateCategory.EnemyFeastPet => c.EnemyFeastPet,
             NameplateCategory.Npc => c.Npc,
             NameplateCategory.Object => c.Object,
             NameplateCategory.Minion => c.Minion,
@@ -274,7 +301,16 @@ public sealed class NameplateManager
             return true;
         }
 
-        return obj.Kind == ObjectKind.Companion;
+        return obj.Kind is ObjectKind.Companion or ObjectKind.EventNpc;
+    }
+
+    private bool RequiresNativePresence(NameplateCategory category)
+    {
+        return category is NameplateCategory.Npc
+            or NameplateCategory.Minion
+            or NameplateCategory.Object
+            or NameplateCategory.HousingFurniture
+            or NameplateCategory.HousingField;
     }
 
     private void TrimActorCache()

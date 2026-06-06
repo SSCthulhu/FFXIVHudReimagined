@@ -7,7 +7,7 @@ namespace FFXIVHudPlugin;
 [Serializable]
 public sealed class HudConfiguration : IPluginConfiguration
 {
-    public int Version { get; set; } = 57;
+    public int Version { get; set; } = 60;
 
     public bool Enabled { get; set; } = true;
     public bool UnlockLayout { get; set; } = false;
@@ -107,6 +107,7 @@ public sealed class HudConfiguration : IPluginConfiguration
     public List<NamedHudLayoutPreset> CustomLayouts { get; set; } = new();
     public string SelectedCustomLayoutName { get; set; } = string.Empty;
     public ActionCameraConfiguration ActionCamera { get; set; } = new();
+    public AetherPlates.Configuration.PluginConfiguration AetherPlates { get; set; } = new();
 
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
@@ -588,6 +589,39 @@ public sealed class HudConfiguration : IPluginConfiguration
             this.Version = 57;
             didChange = true;
         }
+
+        if (this.Version < 58)
+        {
+            this.ActionCamera ??= new ActionCameraConfiguration();
+            this.ActionCamera.PreventRmbDisruption = true;
+            this.Version = 58;
+            didChange = true;
+        }
+
+        if (this.Version < 59)
+        {
+            this.ActionCamera ??= new ActionCameraConfiguration();
+            this.ActionCamera.BackendMode = ActionCameraBackendMode.RmbLatch;
+            this.Version = 59;
+            didChange = true;
+        }
+
+        if (this.Version < 60)
+        {
+            this.AetherPlates ??= new AetherPlates.Configuration.PluginConfiguration();
+            this.AetherPlates.CategoryVisibility ??= new AetherPlates.Configuration.NameplateCategoryVisibility();
+
+            // Recover from legacy/bad state where all category toggles deserialize as false.
+            // This keeps plugin behavior consistent with prior defaults and lets users re-toggle categories as needed.
+            if (this.AetherPlates.Enabled && !this.AetherPlates.CategoryVisibility.IsAnyEnabled())
+            {
+                this.AetherPlates.CategoryVisibility = new AetherPlates.Configuration.NameplateCategoryVisibility();
+            }
+
+            this.Version = 60;
+            didChange = true;
+        }
+
         return didChange;
     }
 
@@ -634,6 +668,18 @@ public sealed class HudConfiguration : IPluginConfiguration
         if (this.ActionCamera is null)
         {
             this.ActionCamera = new ActionCameraConfiguration();
+            changed = true;
+        }
+
+        if (this.AetherPlates is null)
+        {
+            this.AetherPlates = new AetherPlates.Configuration.PluginConfiguration();
+            changed = true;
+        }
+
+        if (this.AetherPlates.CategoryVisibility is null)
+        {
+            this.AetherPlates.CategoryVisibility = new AetherPlates.Configuration.NameplateCategoryVisibility();
             changed = true;
         }
 
@@ -736,6 +782,18 @@ public sealed class HudConfiguration : IPluginConfiguration
         if (!Enum.IsDefined(typeof(ActionCameraBackendMode), this.ActionCamera.BackendMode))
         {
             this.ActionCamera.BackendMode = ActionCameraBackendMode.RmbLatch;
+            changed = true;
+        }
+
+        if (!this.ActionCamera.UnlockOnUi)
+        {
+            this.ActionCamera.UnlockOnUi = true;
+            changed = true;
+        }
+
+        if (!this.ActionCamera.EscAlwaysUnlock)
+        {
+            this.ActionCamera.EscAlwaysUnlock = true;
             changed = true;
         }
 

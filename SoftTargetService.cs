@@ -68,9 +68,9 @@ internal sealed class SoftTargetService
     /// <summary>
     /// Placeholder update path for future center-ray candidate scans.
     /// </summary>
-    public void Update()
+    public void Update(bool allowTargeting = true)
     {
-        if (!this.config.EnableSoftTargetSuggestion)
+        if (!allowTargeting || !this.config.EnableSoftTargetSuggestion)
         {
             this.candidate = default;
             if (this.targetManager.SoftTarget is not null)

@@ -32,6 +32,7 @@ internal sealed class ActionCameraPlugin : IDisposable
     private bool escMenuTemporaryUnlock;
     private bool escUnlockReleaseSeen;
     private bool escRelockRequested;
+    private bool escOpenMenuRequested;
     private ActionCameraRuntimeState runtimeState;
     private long updateTick;
     private long lateUpdateTick;
@@ -89,6 +90,7 @@ internal sealed class ActionCameraPlugin : IDisposable
             this.escMenuTemporaryUnlock = false;
             this.escUnlockReleaseSeen = false;
             this.escRelockRequested = false;
+            this.escOpenMenuRequested = false;
         }
         else
         {
@@ -99,6 +101,7 @@ internal sealed class ActionCameraPlugin : IDisposable
             this.escMenuTemporaryUnlock = false;
             this.escUnlockReleaseSeen = false;
             this.escRelockRequested = false;
+            this.escOpenMenuRequested = false;
         }
     }
 
@@ -123,8 +126,9 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.escMenuTemporaryUnlock = false;
                 this.escUnlockReleaseSeen = false;
                 this.escRelockRequested = false;
+                this.escOpenMenuRequested = false;
                 this.SetActive(false);
-                this.softTargetService.Update();
+                this.softTargetService.Update(false);
                 var backendSnapshot = this.ActiveBackend.GetSnapshot();
                 this.runtimeState = this.runtimeState with
                 {
@@ -171,11 +175,14 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.escMenuTemporaryUnlock = false;
                 this.escUnlockReleaseSeen = false;
                 this.escRelockRequested = false;
+                this.escOpenMenuRequested = false;
             }
 
             var holdUnlockHeld = this.inputManager.IsHoldUnlockActive();
             var uiFocused = this.config.UnlockOnUi && this.uiStateService.IsUiFocused;
             var mainMenuOpen = this.uiStateService.IsMainMenuOpen;
+            var suppressSoftTargeting = false;
+            var escPressedEdge = this.inputManager.ConsumeEscPressedEdge();
 
             if (this.config.EscAlwaysUnlock && this.inputManager.IsEscPressed)
             {
@@ -187,6 +194,15 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.escMenuTemporaryUnlock = true;
                 this.escUnlockReleaseSeen = false;
                 this.escRelockRequested = false;
+                suppressSoftTargeting = true;
+
+                if (escPressedEdge)
+                {
+                    var hadTarget = this.targetManager.Target is not null || this.targetManager.SoftTarget is not null;
+                    this.targetManager.Target = null;
+                    this.targetManager.SoftTarget = null;
+                    this.escOpenMenuRequested = hadTarget && !this.uiStateService.IsMainMenuOpen;
+                }
             }
 
             if (this.escMenuTemporaryUnlock)
@@ -196,7 +212,7 @@ internal sealed class ActionCameraPlugin : IDisposable
                     this.escUnlockReleaseSeen = true;
                 }
 
-                if (this.escUnlockReleaseSeen && this.inputManager.ConsumeEscPressedEdge())
+                if (this.escUnlockReleaseSeen && escPressedEdge)
                 {
                     this.escRelockRequested = true;
                 }
@@ -227,6 +243,7 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.escMenuTemporaryUnlock = false;
                 this.escUnlockReleaseSeen = false;
                 this.escRelockRequested = false;
+                this.escOpenMenuRequested = false;
             }
 
             if (this.config.UnlockMode == ActionCameraUnlockMode.Hold)
@@ -262,6 +279,7 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.unlockReason = ActionCameraUnlockReason.Ui;
                 this.pendingRelock = true;
                 this.suppressTargetOnNextRelock = true;
+                suppressSoftTargeting = true;
             }
             else if (this.pendingRelock && togglePressed)
             {
@@ -276,7 +294,7 @@ internal sealed class ActionCameraPlugin : IDisposable
             }
 
             if (this.escMenuTemporaryUnlock &&
-                ((this.escRelockRequested && !this.inputManager.IsEscPressed) || !mainMenuOpen))
+                (this.escRelockRequested && !this.inputManager.IsEscPressed))
             {
                 this.lockedModeActive = true;
                 this.unlockReason = ActionCameraUnlockReason.None;
@@ -286,6 +304,25 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.escMenuTemporaryUnlock = false;
                 this.escUnlockReleaseSeen = false;
                 this.escRelockRequested = false;
+                this.escOpenMenuRequested = false;
+            }
+
+            if (this.escMenuTemporaryUnlock || this.escForcedUnlockActive || this.inputManager.IsEscPressed)
+            {
+                suppressSoftTargeting = true;
+            }
+
+            if (this.escOpenMenuRequested)
+            {
+                if (this.uiStateService.IsMainMenuOpen)
+                {
+                    this.escOpenMenuRequested = false;
+                }
+                else if (!this.inputManager.IsEscPressed)
+                {
+                    this.uiStateService.TryOpenSystemMenu();
+                    this.escOpenMenuRequested = false;
+                }
             }
 
             this.SetActive(this.lockedModeActive);
@@ -295,7 +332,7 @@ internal sealed class ActionCameraPlugin : IDisposable
                 this.deferredSuppressTargetTap = false;
                 this.suppressTargetOnNextRelock = false;
             }
-            this.softTargetService.Update();
+            this.softTargetService.Update(!suppressSoftTargeting);
 
             this.pendingDeltaX = this.inputManager.MouseDeltaX;
             this.pendingDeltaY = this.inputManager.MouseDeltaY;
@@ -479,12 +516,11 @@ internal sealed class ActionCameraPlugin : IDisposable
     }
 
     private ICameraControlBackend ActiveBackend =>
-        this.config.BackendMode == ActionCameraBackendMode.DirectExperimental
-            ? this.directBackend
-            : this.rmbLatchBackend;
+        this.rmbLatchBackend;
 
     private void ClearCurrentTarget()
     {
         this.targetManager.Target = null;
     }
+
 }
