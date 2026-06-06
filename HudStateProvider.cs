@@ -94,6 +94,7 @@ public sealed class HudStateProvider
     }
 
     public HudStateSnapshot Snapshot => this.snapshot;
+    public ITextureProvider TextureProvider => this.textureProvider;
 
     public MinimapDiagnosticReport MinimapDiagnostics => this.minimapStateProvider.LatestDiagnostics;
 

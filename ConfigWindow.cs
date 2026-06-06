@@ -31,7 +31,8 @@ public sealed class ConfigWindow
         this.onActionCameraConfigChanged = onActionCameraConfigChanged;
         this.aetherPlatesConfigWindow = new AetherPlates.UI.ConfigWindow(
             this.config.AetherPlates,
-            this.config.Save);
+            this.config.Save,
+            this.stateProvider?.TextureProvider ?? throw new InvalidOperationException("Texture provider is required for nameplate designer."));
         this.SyncCustomLayoutSelectionIndex();
     }
 

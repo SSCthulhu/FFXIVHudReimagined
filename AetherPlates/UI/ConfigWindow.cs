@@ -1,7 +1,8 @@
 using Dalamud.Bindings.ImGui;
 using FFXIVHudPlugin.AetherPlates.Configuration;
+using FFXIVHudPlugin.AetherPlates.Core;
 using FFXIVHudPlugin.AetherPlates.Layout;
-using FFXIVHudPlugin.AetherPlates.Styles;
+using Dalamud.Plugin.Services;
 using System.Numerics;
 
 namespace FFXIVHudPlugin.AetherPlates.UI;
@@ -10,6 +11,7 @@ public sealed class ConfigWindow
 {
     private readonly PluginConfiguration config;
     private readonly Action onConfigChanged;
+    private readonly LayoutEditorWindow layoutEditorWindow;
     private string buffWhitelistInput = string.Empty;
     private string buffBlacklistInput = string.Empty;
     private string debuffWhitelistInput = string.Empty;
@@ -18,10 +20,12 @@ public sealed class ConfigWindow
 
     public ConfigWindow(
         PluginConfiguration config,
-        Action onConfigChanged)
+        Action onConfigChanged,
+        ITextureProvider textureProvider)
     {
         this.config = config;
         this.onConfigChanged = onConfigChanged;
+        this.layoutEditorWindow = new LayoutEditorWindow(config, onConfigChanged, textureProvider);
     }
 
     public void DrawSection()
@@ -52,6 +56,7 @@ public sealed class ConfigWindow
         }
 
         this.DrawAdvancedCategoryMapping();
+        this.layoutEditorWindow.Draw();
 
         ImGui.Spacing();
         ImGui.Separator();
@@ -166,8 +171,8 @@ public sealed class ConfigWindow
     private void DrawAdvancedCategoryMapping()
     {
         var v = this.config.CategoryVisibility;
-        ImGui.TextUnformatted("Advanced Category Mapping (Native 1:1)");
-        ImGui.TextColored(0xFF9AA1AB, "These match Character Config > Display Name Settings categories.");
+        ImGui.TextUnformatted("Category Designer");
+        ImGui.TextColored(0xFF9AA1AB, "Select a category to open its dedicated visual editor.");
         ImGui.Spacing();
 
         DrawGroupTabs();
@@ -176,35 +181,53 @@ public sealed class ConfigWindow
         switch (this.selectedGroupTab)
         {
             case GroupTab.Own:
-                DrawCategorySection("Own (Self)", v.Self, value => v.Self = value, this.config.SelfVisual);
-                DrawCategorySection("Companions (Own)", v.SelfCompanion, value => v.SelfCompanion = value, this.config.SelfCompanionVisual);
-                DrawCategorySection("Pets (Own)", v.SelfPet, value => v.SelfPet = value, this.config.SelfPetVisual);
+                DrawCategorySection(
+                    "Own (Self)",
+                    "own_self",
+                    NameplateManager.NameplateCategory.Self,
+                    () => v.Self,
+                    value => v.Self = value,
+                    this.config.SelfVisual);
+                DrawCategorySection(
+                    "Companions (Own)",
+                    "own_companion",
+                    NameplateManager.NameplateCategory.SelfCompanion,
+                    () => v.SelfCompanion,
+                    value => v.SelfCompanion = value,
+                    this.config.SelfCompanionVisual);
+                DrawCategorySection(
+                    "Pets (Own)",
+                    "own_pet",
+                    NameplateManager.NameplateCategory.SelfPet,
+                    () => v.SelfPet,
+                    value => v.SelfPet = value,
+                    this.config.SelfPetVisual);
                 break;
             case GroupTab.Others:
-                DrawCategorySection("Party Members", v.PartyMember, value => v.PartyMember = value, this.config.PartyVisual);
-                DrawCategorySection("Party Companions", v.PartyCompanion, value => v.PartyCompanion = value, this.config.PartyCompanionVisual);
-                DrawCategorySection("Party Pets", v.PartyPet, value => v.PartyPet = value, this.config.PartyPetVisual);
-                DrawCategorySection("Alliance Members", v.AllianceMember, value => v.AllianceMember = value, this.config.AllianceVisual);
-                DrawCategorySection("Alliance Pets", v.AlliancePet, value => v.AlliancePet = value, this.config.AlliancePetVisual);
-                DrawCategorySection("Friends", v.Friend, value => v.Friend = value, this.config.FriendVisual);
-                DrawCategorySection("Friend Companions", v.FriendCompanion, value => v.FriendCompanion = value, this.config.FriendCompanionVisual);
-                DrawCategorySection("Friend Pets", v.FriendPet, value => v.FriendPet = value, this.config.FriendPetVisual);
-                DrawCategorySection("Other PCs", v.OtherPc, value => v.OtherPc = value, this.config.OtherPcVisual);
-                DrawCategorySection("Other Companions", v.OtherCompanion, value => v.OtherCompanion = value, this.config.OtherCompanionVisual);
-                DrawCategorySection("Other Pets", v.OtherPet, value => v.OtherPet = value, this.config.OtherPetVisual);
+                DrawCategorySection("Party Members", "party_member", NameplateManager.NameplateCategory.Party, () => v.PartyMember, value => v.PartyMember = value, this.config.PartyVisual);
+                DrawCategorySection("Party Companions", "party_companion", NameplateManager.NameplateCategory.PartyCompanion, () => v.PartyCompanion, value => v.PartyCompanion = value, this.config.PartyCompanionVisual);
+                DrawCategorySection("Party Pets", "party_pet", NameplateManager.NameplateCategory.PartyPet, () => v.PartyPet, value => v.PartyPet = value, this.config.PartyPetVisual);
+                DrawCategorySection("Alliance Members", "alliance_member", NameplateManager.NameplateCategory.Alliance, () => v.AllianceMember, value => v.AllianceMember = value, this.config.AllianceVisual);
+                DrawCategorySection("Alliance Pets", "alliance_pet", NameplateManager.NameplateCategory.AlliancePet, () => v.AlliancePet, value => v.AlliancePet = value, this.config.AlliancePetVisual);
+                DrawCategorySection("Friends", "friend", NameplateManager.NameplateCategory.Friend, () => v.Friend, value => v.Friend = value, this.config.FriendVisual);
+                DrawCategorySection("Friend Companions", "friend_companion", NameplateManager.NameplateCategory.FriendCompanion, () => v.FriendCompanion, value => v.FriendCompanion = value, this.config.FriendCompanionVisual);
+                DrawCategorySection("Friend Pets", "friend_pet", NameplateManager.NameplateCategory.FriendPet, () => v.FriendPet, value => v.FriendPet = value, this.config.FriendPetVisual);
+                DrawCategorySection("Other PCs", "other_pc", NameplateManager.NameplateCategory.OtherPc, () => v.OtherPc, value => v.OtherPc = value, this.config.OtherPcVisual);
+                DrawCategorySection("Other Companions", "other_companion", NameplateManager.NameplateCategory.OtherCompanion, () => v.OtherCompanion, value => v.OtherCompanion = value, this.config.OtherCompanionVisual);
+                DrawCategorySection("Other Pets", "other_pet", NameplateManager.NameplateCategory.OtherPet, () => v.OtherPet, value => v.OtherPet = value, this.config.OtherPetVisual);
                 break;
             case GroupTab.Npcs:
-                DrawCategorySection("Unengaged Enemies", v.EnemyUnengaged, value => v.EnemyUnengaged = value, this.config.EnemyUnengagedVisual);
-                DrawCategorySection("Engaged Enemies", v.EnemyEngaged, value => v.EnemyEngaged = value, this.config.EnemyEngagedVisual);
-                DrawCategorySection("Claimed Enemies", v.EnemyClaimed, value => v.EnemyClaimed = value, this.config.EnemyClaimedVisual);
-                DrawCategorySection("Unclaimed Enemies", v.EnemyUnclaimed, value => v.EnemyUnclaimed = value, this.config.EnemyUnclaimedVisual);
-                DrawCategorySection("Feast Enemies", v.EnemyFeast, value => v.EnemyFeast = value, this.config.EnemyFeastVisual);
-                DrawCategorySection("Feast Enemy Pets", v.EnemyFeastPet, value => v.EnemyFeastPet = value, this.config.EnemyFeastPetVisual);
-                DrawCategorySection("NPCs", v.Npc, value => v.Npc = value, this.config.NpcVisual);
-                DrawCategorySection("Objects", v.Object, value => v.Object = value, this.config.ObjectVisual);
-                DrawCategorySection("Minions", v.Minion, value => v.Minion = value, this.config.MinionVisual);
-                DrawCategorySection("Housing Furniture", v.HousingFurniture, value => v.HousingFurniture = value, this.config.HousingFurnitureVisual);
-                DrawCategorySection("Housing Gardens", v.HousingField, value => v.HousingField = value, this.config.HousingFieldVisual);
+                DrawCategorySection("Unengaged Enemies", "enemy_unengaged", NameplateManager.NameplateCategory.EnemyUnengaged, () => v.EnemyUnengaged, value => v.EnemyUnengaged = value, this.config.EnemyUnengagedVisual);
+                DrawCategorySection("Engaged Enemies", "enemy_engaged", NameplateManager.NameplateCategory.EnemyEngaged, () => v.EnemyEngaged, value => v.EnemyEngaged = value, this.config.EnemyEngagedVisual);
+                DrawCategorySection("Claimed Enemies", "enemy_claimed", NameplateManager.NameplateCategory.EnemyClaimed, () => v.EnemyClaimed, value => v.EnemyClaimed = value, this.config.EnemyClaimedVisual);
+                DrawCategorySection("Unclaimed Enemies", "enemy_unclaimed", NameplateManager.NameplateCategory.EnemyUnclaimed, () => v.EnemyUnclaimed, value => v.EnemyUnclaimed = value, this.config.EnemyUnclaimedVisual);
+                DrawCategorySection("Feast Enemies", "enemy_feast", NameplateManager.NameplateCategory.EnemyFeast, () => v.EnemyFeast, value => v.EnemyFeast = value, this.config.EnemyFeastVisual);
+                DrawCategorySection("Feast Enemy Pets", "enemy_feast_pet", NameplateManager.NameplateCategory.EnemyFeastPet, () => v.EnemyFeastPet, value => v.EnemyFeastPet = value, this.config.EnemyFeastPetVisual);
+                DrawCategorySection("NPCs", "npc", NameplateManager.NameplateCategory.Npc, () => v.Npc, value => v.Npc = value, this.config.NpcVisual);
+                DrawCategorySection("Objects", "object", NameplateManager.NameplateCategory.Object, () => v.Object, value => v.Object = value, this.config.ObjectVisual);
+                DrawCategorySection("Minions", "minion", NameplateManager.NameplateCategory.Minion, () => v.Minion, value => v.Minion = value, this.config.MinionVisual);
+                DrawCategorySection("Housing Furniture", "housing_furniture", NameplateManager.NameplateCategory.HousingFurniture, () => v.HousingFurniture, value => v.HousingFurniture = value, this.config.HousingFurnitureVisual);
+                DrawCategorySection("Housing Gardens", "housing_field", NameplateManager.NameplateCategory.HousingField, () => v.HousingField, value => v.HousingField = value, this.config.HousingFieldVisual);
                 break;
         }
     }
@@ -252,60 +275,26 @@ public sealed class ConfigWindow
 
     private void DrawCategorySection(
         string title,
-        bool categoryEnabled,
+        string categoryId,
+        NameplateManager.NameplateCategory category,
+        Func<bool> getCategoryEnabled,
         Action<bool> setCategoryEnabled,
         CategoryVisualSettings visuals)
     {
         ImGui.Separator();
         ImGui.Spacing();
-        ImGui.TextUnformatted(title);
-        var categoryId = title.Replace(" ", "_", StringComparison.Ordinal).Replace("(", string.Empty, StringComparison.Ordinal).Replace(")", string.Empty, StringComparison.Ordinal);
-        DrawCategoryToggle($"Enable Category##{categoryId}_enabled", categoryEnabled, setCategoryEnabled);
-
-        DrawCategoryWidgetEditor(visuals, categoryId, "health_bar", "Health Bar");
-        DrawCategoryWidgetEditor(visuals, categoryId, "name_text", "Name Text");
-        DrawCategoryWidgetEditor(visuals, categoryId, "target_indicator", "Target Indicator");
-        DrawCategoryWidgetEditor(visuals, categoryId, "cast_bar", "Cast Bar");
-        DrawCategoryWidgetEditor(visuals, categoryId, "buff_row", "Buff Row");
-        DrawCategoryWidgetEditor(visuals, categoryId, "debuff_row", "Debuff Row");
-    }
-
-    private void DrawCategoryWidgetEditor(CategoryVisualSettings visuals, string categoryId, string widgetId, string label)
-    {
-        var enabled = visuals.IsWidgetEnabled(widgetId);
-        if (ImGui.Checkbox($"{label}##{categoryId}_{widgetId}_enabled", ref enabled))
+        var enabled = getCategoryEnabled();
+        var buttonLabel = $"{title} {(enabled ? "(Enabled)" : "(Disabled)")}";
+        if (ImGui.Button(buttonLabel, new Vector2(-1f, 28f)))
         {
-            visuals.SetWidgetEnabled(widgetId, enabled);
-            this.onConfigChanged();
+            this.layoutEditorWindow.Open(new LayoutEditorWindow.CategoryEditorTarget(
+                categoryId,
+                title,
+                category,
+                getCategoryEnabled,
+                setCategoryEnabled,
+                visuals));
         }
-
-        if (!visuals.WidgetLayouts.TryGetValue(widgetId, out var rule))
-        {
-            visuals.EnsureDefaults();
-            rule = visuals.WidgetLayouts[widgetId];
-        }
-
-        if (!enabled)
-        {
-            return;
-        }
-
-        ImGui.Indent();
-        var offset = rule.Offset;
-        if (ImGui.DragFloat2($"Offset (X/Y)##{categoryId}_{widgetId}_offset", ref offset, 0.5f, -600f, 600f, "%.1f"))
-        {
-            rule.Offset = offset;
-            this.onConfigChanged();
-        }
-
-        var size = rule.Size;
-        if (ImGui.DragFloat2($"Size (W/H)##{categoryId}_{widgetId}_size", ref size, 0.5f, 0f, 600f, "%.1f"))
-        {
-            rule.Size = new Vector2(Math.Max(0f, size.X), Math.Max(0f, size.Y));
-            this.onConfigChanged();
-        }
-
-        ImGui.Unindent();
     }
 
     private enum GroupTab

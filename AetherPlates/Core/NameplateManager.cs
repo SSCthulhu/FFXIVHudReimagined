@@ -11,7 +11,7 @@ namespace FFXIVHudPlugin.AetherPlates.Core;
 
 public sealed class NameplateManager
 {
-    internal enum NameplateCategory
+    public enum NameplateCategory
     {
         Self,
         SelfCompanion,

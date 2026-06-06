@@ -49,8 +49,8 @@ internal static class NameplateCategoryResolver
 
         if (subKind == BattleNpcSubKind.NpcPartyMember)
         {
-            // Duty Support / Trust actors should follow NPC category mapping.
-            return NameplateManager.NameplateCategory.Npc;
+            // Duty Support / Trust actors should follow party-member visuals.
+            return NameplateManager.NameplateCategory.Party;
         }
 
         if (obj.IsPlayerCharacter)
@@ -180,7 +180,7 @@ internal static class NameplateCategoryResolver
         var isPet = subKind == BattleNpcSubKind.Pet;
         if (subKind == BattleNpcSubKind.NpcPartyMember)
         {
-            return NameplateManager.NameplateCategory.Npc;
+            return NameplateManager.NameplateCategory.Party;
         }
 
         if (obj.OwnerId != 0 && ownerLookup.TryGetValue(obj.OwnerId, out var owner))
