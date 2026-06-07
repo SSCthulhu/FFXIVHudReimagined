@@ -19,7 +19,8 @@ public sealed record NameplateContext(
     bool IsAllianceMember,
     bool IsHostile,
     bool IsFriendly,
-    float Distance)
+    float Distance,
+    int FontFamilyId = 0)
 {
     public NameplateStyle? ActiveStyle { get; init; }
 }

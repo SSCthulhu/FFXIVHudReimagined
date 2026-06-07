@@ -58,6 +58,7 @@ public sealed class NameplateManager
         public required NameplateCategory LastCategory { get; set; }
         public required long LastSeenFrame { get; set; }
         public required bool HadNativeAnchor { get; set; }
+        public float CalibratedScreenYOffset { get; set; }
     }
 
     internal IReadOnlyDictionary<ulong, TrackedObject> CurrentObjectsById => this.currentObjectsById;
@@ -157,6 +158,9 @@ public sealed class NameplateManager
                 LastCategory = category,
                 LastSeenFrame = this.frameCounter,
                 HadNativeAnchor = this.nativeAnchorService.IsInCurrentNativeSet(obj.ObjectId),
+                CalibratedScreenYOffset = this.actorCache.TryGetValue(obj.ObjectId, out var existingCache)
+                    ? existingCache.CalibratedScreenYOffset
+                    : 0f,
             };
 
             var context = new NameplateContext(
@@ -173,7 +177,8 @@ public sealed class NameplateManager
                 obj.IsAllianceMember,
                 isHostile,
                 isFriendly,
-                obj.Distance);
+                obj.Distance,
+                this.configuration.ResolveFontFamilyId(categoryVisual));
 
             this.renderer.DrawNameplate(context, categoryVisual.EnabledWidgetIdsSet);
         }
@@ -272,15 +277,44 @@ public sealed class NameplateManager
 
     private bool TryResolveAnchor(TrackedObject obj, Vector3 offset, out Vector2 screen)
     {
-        if (this.nativeAnchorService.TryGetAnchor(obj.ObjectId, out screen) && this.IsValidAnchor(screen))
+        screen = default;
+        var projectionY = this.GetAutoProjectionYOffset(obj, offset);
+        var projectionOffset = new Vector3(0f, projectionY, 0f);
+
+        var hasProjectedAnchor = this.projectionService.WorldToScreen(obj.Position + projectionOffset, out var projectedScreen);
+        var projectedAnchorIsValid = hasProjectedAnchor && this.IsValidAnchor(projectedScreen);
+        var hasNativeAnchor = this.nativeAnchorService.TryGetAnchor(obj.ObjectId, out var nativeScreen) && this.IsValidAnchor(nativeScreen);
+        if (hasNativeAnchor)
         {
+            this.UpdateProjectionCalibration(obj, nativeScreen, offset);
+
+            if (projectedAnchorIsValid)
+            {
+                // Keep X centered on the model/projection so X offset of 0 aligns with actor center.
+                screen = new Vector2(projectedScreen.X, nativeScreen.Y);
+                return true;
+            }
+
+            screen = nativeScreen;
             return true;
         }
 
-        var projectionOffset = new Vector3(0f, MathF.Max(offset.Y, obj.Height * 2.2f), 0f);
-        if (this.projectionService.WorldToScreen(obj.Position + projectionOffset, out screen) && this.IsValidAnchor(screen))
+        if (hasProjectedAnchor)
         {
-            return true;
+            if (this.actorCache.TryGetValue(obj.ObjectId, out var cache))
+            {
+                projectedScreen = new Vector2(projectedScreen.X, projectedScreen.Y + cache.CalibratedScreenYOffset);
+            }
+
+            if (!this.IsValidAnchor(projectedScreen))
+            {
+                // continue to cached fallback path
+            }
+            else
+            {
+                screen = projectedScreen;
+                return true;
+            }
         }
 
         if (this.actorCache.TryGetValue(obj.ObjectId, out var cached) &&
@@ -292,6 +326,44 @@ public sealed class NameplateManager
         }
 
         return false;
+    }
+
+    private float GetAutoProjectionYOffset(TrackedObject obj, Vector3 offset)
+    {
+        var baseModelOffset = obj.Height > 0.01f
+            ? obj.Height * 2.2f
+            : 2.0f;
+        var fallbackBias = MathF.Max(0f, offset.Y);
+        // Auto-Y priority: model-derived head anchor with fallback bias.
+        return MathF.Max(baseModelOffset, fallbackBias);
+    }
+
+    private void UpdateProjectionCalibration(TrackedObject obj, Vector2 nativeScreen, Vector3 offset)
+    {
+        var baseModelOffset = obj.Height > 0.01f
+            ? obj.Height * 2.2f
+            : 2.0f;
+        var fallbackBias = MathF.Max(0f, offset.Y);
+        var currentProjectionY = MathF.Max(baseModelOffset, fallbackBias);
+        if (!this.projectionService.WorldToScreen(obj.Position + new Vector3(0f, currentProjectionY, 0f), out var projectedScreen) ||
+            !this.IsValidAnchor(projectedScreen))
+        {
+            return;
+        }
+
+        var deltaY = nativeScreen.Y - projectedScreen.Y;
+        if (!float.IsFinite(deltaY))
+        {
+            return;
+        }
+
+        if (!this.actorCache.TryGetValue(obj.ObjectId, out var cache))
+        {
+            return;
+        }
+
+        // Smooth calibration to avoid noisy single-frame spikes.
+        cache.CalibratedScreenYOffset = (cache.CalibratedScreenYOffset * 0.85f) + (deltaY * 0.15f);
     }
 
     private static bool ShouldRenderObject(TrackedObject obj)

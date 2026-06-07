@@ -4,6 +4,10 @@ namespace FFXIVHudPlugin.AetherPlates.Configuration;
 [Serializable]
 public sealed class PluginConfiguration
 {
+    private const float BuffDebuffBaseHeight = 20f;
+    private const int BuffDebuffBaseMaxIcons = 8;
+    private const float BuffDebuffBaseGap = 2f;
+    private static readonly float BuffDebuffBaseWidth = (StatusLaneLayout.GetIconWidth(BuffDebuffBaseHeight) * BuffDebuffBaseMaxIcons) + (BuffDebuffBaseGap * (BuffDebuffBaseMaxIcons - 1));
     public bool Enabled { get; set; } = false;
     public float VerticalOffset { get; set; } = 2.05f;
     public float TemporaryGlobalScale { get; set; } = 1.0f;
@@ -14,6 +18,7 @@ public sealed class PluginConfiguration
     public bool EnableDynamicCombatRange { get; set; } = false;
     public float CombatEnemyMaxDistanceYalms { get; set; } = 45f;
     public float CombatFriendlyMaxDistanceYalms { get; set; } = 32f;
+    public int DefaultFontFamilyId { get; set; } = 0;
     public NameplateCategoryVisibility CategoryVisibility { get; set; } = new();
     public CategoryVisualSettings SelfVisual { get; set; } = CategoryVisualSettings.CreateDefault();
     public CategoryVisualSettings SelfCompanionVisual { get; set; } = CategoryVisualSettings.CreateDefault();
@@ -50,12 +55,9 @@ public sealed class PluginConfiguration
     {
         get
         {
-            if (this.enabledWidgetIdsSet is null)
-            {
-                this.enabledWidgetIdsSet = BuildEnabledWidgetSet();
-            }
-
-            return this.enabledWidgetIdsSet;
+            // Always derive from current config booleans/profile state.
+            // This avoids stale persisted getter-only collection data from older config payloads.
+            return BuildEnabledWidgetSet();
         }
     }
 
@@ -132,12 +134,13 @@ public sealed class PluginConfiguration
     {
         var activeProfile = this.GetActiveProfile();
         return activeProfile.EnabledWidgets.Count == 0
-            ? new HashSet<string>(new[] { "health_bar", "name_text", "target_indicator", "cast_bar" }, StringComparer.Ordinal)
+            ? new HashSet<string>(new[] { "health_bar", "name_text", "target_indicator", "cast_bar", "cast_bar_text" }, StringComparer.Ordinal)
             : new HashSet<string>(activeProfile.EnabledWidgets, StringComparer.Ordinal);
     }
 
     private void EnsureCategoryVisualDefaults()
     {
+        this.DefaultFontFamilyId = Math.Max(0, this.DefaultFontFamilyId);
         this.SelfVisual ??= CategoryVisualSettings.CreateDefault();
         this.SelfCompanionVisual ??= CategoryVisualSettings.CreateDefault();
         this.SelfPetVisual ??= CategoryVisualSettings.CreateDefault();
@@ -191,6 +194,12 @@ public sealed class PluginConfiguration
         this.HousingFieldVisual.EnsureDefaults();
     }
 
+    internal int ResolveFontFamilyId(CategoryVisualSettings visuals)
+    {
+        var useGlobalFont = visuals.UseGlobalFont ?? visuals.FontFamilyId == 0;
+        return useGlobalFont ? this.DefaultFontFamilyId : visuals.FontFamilyId;
+    }
+
     private static void EnsureProfileDefaults(NameplateProfile profile)
     {
         profile.EnabledWidgets ??= new HashSet<string>(StringComparer.Ordinal);
@@ -232,6 +241,18 @@ public sealed class PluginConfiguration
             {
                 buffLayout.Offset = new System.Numerics.Vector2(76f, -32f);
             }
+
+            if (Math.Abs(buffLayout.Size.X - 176f) <= 2f && Math.Abs(buffLayout.Size.Y - 22f) <= 2f)
+            {
+                buffLayout.Size = new System.Numerics.Vector2(BuffDebuffBaseWidth, BuffDebuffBaseHeight);
+            }
+
+            // Ensure row width/height remain proportional for scale-based rendering.
+            if (buffLayout.Size.Y > 0.001f)
+            {
+                var inferredScale = Math.Clamp(buffLayout.Size.Y / BuffDebuffBaseHeight, 0.25f, 8f);
+                buffLayout.Size = new System.Numerics.Vector2(BuffDebuffBaseWidth * inferredScale, BuffDebuffBaseHeight * inferredScale);
+            }
         }
 
         if (style.WidgetLayouts.TryGetValue("debuff_row", out var debuffLayout))
@@ -251,6 +272,18 @@ public sealed class PluginConfiguration
             {
                 debuffLayout.Offset = new System.Numerics.Vector2(-76f, -32f);
             }
+
+            if (Math.Abs(debuffLayout.Size.X - 176f) <= 2f && Math.Abs(debuffLayout.Size.Y - 22f) <= 2f)
+            {
+                debuffLayout.Size = new System.Numerics.Vector2(BuffDebuffBaseWidth, BuffDebuffBaseHeight);
+            }
+
+            // Ensure row width/height remain proportional for scale-based rendering.
+            if (debuffLayout.Size.Y > 0.001f)
+            {
+                var inferredScale = Math.Clamp(debuffLayout.Size.Y / BuffDebuffBaseHeight, 0.25f, 8f);
+                debuffLayout.Size = new System.Numerics.Vector2(BuffDebuffBaseWidth * inferredScale, BuffDebuffBaseHeight * inferredScale);
+            }
         }
 
         if (style.WidgetLayouts.TryGetValue("cast_bar", out var castLayout))
@@ -265,6 +298,18 @@ public sealed class PluginConfiguration
             {
                 castLayout.Anchor = Layout.WidgetAnchor.Top;
                 castLayout.Offset = new System.Numerics.Vector2(0f, -22f);
+            }
+        }
+
+        if (style.WidgetLayouts.TryGetValue("cast_bar_text", out var castTextLayout))
+        {
+            var isLegacyCastTextDefault = castTextLayout.Anchor == Layout.WidgetAnchor.Top &&
+                                          Math.Abs(castTextLayout.Offset.X) <= 1f &&
+                                          Math.Abs(castTextLayout.Offset.Y + 20f) <= 2f;
+            if (isLegacyCastTextDefault)
+            {
+                castTextLayout.Anchor = Layout.WidgetAnchor.Top;
+                castTextLayout.Offset = new System.Numerics.Vector2(0f, -20f);
             }
         }
 
@@ -484,10 +529,17 @@ public sealed class CategoryVisualSettings
 {
     public bool HealthBarEnabled { get; set; } = true;
     public bool NameTextEnabled { get; set; } = true;
+    public float NameTextFontSize { get; set; } = 16f;
     public bool TargetIndicatorEnabled { get; set; } = true;
     public bool CastBarEnabled { get; set; } = true;
+    public bool CastBarTextEnabled { get; set; } = true;
+    public float CastBarTextFontSize { get; set; } = 14f;
     public bool BuffRowEnabled { get; set; } = true;
+    public float BuffRowScale { get; set; } = 1.0f;
     public bool DebuffRowEnabled { get; set; } = true;
+    public float DebuffRowScale { get; set; } = 1.0f;
+    public bool? UseGlobalFont { get; set; } = null;
+    public int FontFamilyId { get; set; } = 0;
     public Dictionary<string, WidgetLayoutRule> WidgetLayouts { get; set; } = new(StringComparer.Ordinal);
     [NonSerialized]
     private HashSet<string>? enabledWidgetIdsSet;
@@ -496,8 +548,9 @@ public sealed class CategoryVisualSettings
     {
         get
         {
-            this.enabledWidgetIdsSet ??= this.BuildEnabledWidgetSet();
-            return this.enabledWidgetIdsSet;
+            // Always derive from current widget toggles.
+            // This prevents stale serialized getter-only values from overriding live toggle fields.
+            return this.BuildEnabledWidgetSet();
         }
     }
 
@@ -510,13 +563,30 @@ public sealed class CategoryVisualSettings
 
     public void EnsureDefaults()
     {
+        const float buffDebuffBaseWidth = 138.8f;
+        const float buffDebuffBaseHeight = 20f;
         this.WidgetLayouts ??= new Dictionary<string, WidgetLayoutRule>(StringComparer.Ordinal);
+        this.FontFamilyId = Math.Max(0, this.FontFamilyId);
+        this.NameTextFontSize = Math.Clamp(this.NameTextFontSize, 8f, 64f);
+        this.CastBarTextFontSize = Math.Clamp(this.CastBarTextFontSize, 8f, 64f);
+        this.BuffRowScale = Math.Clamp(this.BuffRowScale, 0.25f, 8f);
+        this.DebuffRowScale = Math.Clamp(this.DebuffRowScale, 0.25f, 8f);
         CopyFallbackLayout("health_bar");
         CopyFallbackLayout("name_text");
         CopyFallbackLayout("target_indicator");
         CopyFallbackLayout("cast_bar");
+        CopyFallbackLayout("cast_bar_text");
         CopyFallbackLayout("buff_row");
         CopyFallbackLayout("debuff_row");
+        if (this.WidgetLayouts.TryGetValue("buff_row", out var buffRowRule))
+        {
+            buffRowRule.Size = new System.Numerics.Vector2(buffDebuffBaseWidth * this.BuffRowScale, buffDebuffBaseHeight * this.BuffRowScale);
+        }
+
+        if (this.WidgetLayouts.TryGetValue("debuff_row", out var debuffRowRule))
+        {
+            debuffRowRule.Size = new System.Numerics.Vector2(buffDebuffBaseWidth * this.DebuffRowScale, buffDebuffBaseHeight * this.DebuffRowScale);
+        }
         this.enabledWidgetIdsSet = null;
     }
 
@@ -528,6 +598,7 @@ public sealed class CategoryVisualSettings
             "name_text" => this.NameTextEnabled,
             "target_indicator" => this.TargetIndicatorEnabled,
             "cast_bar" => this.CastBarEnabled,
+            "cast_bar_text" => this.CastBarTextEnabled,
             "buff_row" => this.BuffRowEnabled,
             "debuff_row" => this.DebuffRowEnabled,
             _ => false,
@@ -549,6 +620,9 @@ public sealed class CategoryVisualSettings
                 break;
             case "cast_bar":
                 this.CastBarEnabled = enabled;
+                break;
+            case "cast_bar_text":
+                this.CastBarTextEnabled = enabled;
                 break;
             case "buff_row":
                 this.BuffRowEnabled = enabled;
@@ -582,6 +656,11 @@ public sealed class CategoryVisualSettings
         if (this.CastBarEnabled)
         {
             set.Add("cast_bar");
+        }
+
+        if (this.CastBarTextEnabled)
+        {
+            set.Add("cast_bar_text");
         }
 
         if (this.BuffRowEnabled)

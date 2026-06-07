@@ -1,6 +1,7 @@
 using FFXIVHudPlugin.AetherPlates.Data;
 using FFXIVHudPlugin.AetherPlates.Layout;
 using FFXIVHudPlugin.AetherPlates.Rendering;
+using Dalamud.Bindings.ImGui;
 using System.Numerics;
 
 namespace FFXIVHudPlugin.AetherPlates.Widgets.NameText;
@@ -23,10 +24,16 @@ public sealed class NameTextWidget : INameplateWidget
             displayText = $"{displayText[..Math.Max(3, truncateAt - 3)]}...";
         }
 
-        var pos = layout.Position;
-        var fontSize = 16f * Math.Clamp(context.Profile.NameText.FontScale, 0.7f, 2.4f) * Math.Clamp(context.GlobalScale, 0.5f, 3.0f);
+        var baseFontSizeSetting = Math.Clamp(context.CategoryVisual.NameTextFontSize, 8f, 64f);
+        var fontSize = baseFontSizeSetting * Math.Clamp(context.Profile.NameText.FontScale, 0.7f, 2.4f) * Math.Clamp(context.GlobalScale, 0.5f, 3.0f);
         var scaleFactor = Math.Clamp(context.GlobalScale, 0.5f, 3.0f);
         var stroke = Math.Max(1f, 1.2f * scaleFactor);
+        using var fontScope = GameFontRegistry.PushFont(context.FontFamilyId);
+        var baseFontSize = Math.Max(1f, ImGui.GetFontSize());
+        var textSize = ImGui.CalcTextSize(displayText) * (fontSize / baseFontSize);
+        var pos = new Vector2(
+            layout.Position.X + MathF.Max(0f, (layout.Size.X - textSize.X) * 0.5f),
+            layout.Position.Y + MathF.Max(0f, (layout.Size.Y - textSize.Y) * 0.5f));
 
         if (context.Profile.NameText.Outline)
         {

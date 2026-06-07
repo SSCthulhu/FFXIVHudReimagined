@@ -1,6 +1,7 @@
 namespace FFXIVHudPlugin.AetherPlates.Widgets.BuffRow;
 
 using Dalamud.Interface.Textures;
+using Dalamud.Bindings.ImGui;
 using FFXIVHudPlugin.AetherPlates.Data;
 using FFXIVHudPlugin.AetherPlates.Layout;
 using FFXIVHudPlugin.AetherPlates.Rendering;
@@ -26,12 +27,16 @@ public sealed class BuffRowWidget : INameplateWidget
     {
         var statuses = context.Tracked.Statuses;
         var iconScale = Math.Clamp(context.GlobalScale, 0.5f, 3.0f);
-        var iconSize = debuffs
-            ? Math.Max(8f, context.Profile.DebuffRow.IconSize) * iconScale
-            : Math.Max(8f, context.Profile.BuffRow.IconSize) * iconScale;
+        var rowScale = debuffs
+            ? Math.Clamp(context.CategoryVisual.DebuffRowScale, 0.25f, 8f)
+            : Math.Clamp(context.CategoryVisual.BuffRowScale, 0.25f, 8f);
+        var iconHeight = debuffs
+            ? Math.Max(8f, context.Profile.DebuffRow.IconSize) * iconScale * rowScale
+            : Math.Max(8f, context.Profile.BuffRow.IconSize) * iconScale * rowScale;
+        var iconWidth = StatusLaneLayout.GetIconWidth(iconHeight);
         var gap = debuffs
-            ? Math.Max(0f, context.Profile.DebuffRow.IconGap) * iconScale
-            : Math.Max(0f, context.Profile.BuffRow.IconGap) * iconScale;
+            ? Math.Max(0f, context.Profile.DebuffRow.IconGap) * iconScale * rowScale
+            : Math.Max(0f, context.Profile.BuffRow.IconGap) * iconScale * rowScale;
         var maxIcons = debuffs
             ? Math.Clamp(context.Profile.DebuffRow.MaxIcons, 1, 24)
             : Math.Clamp(context.Profile.BuffRow.MaxIcons, 1, 24);
@@ -40,6 +45,7 @@ public sealed class BuffRowWidget : INameplateWidget
         var rowWidth = layout.Size.X;
         var drawn = 0;
         var localId = (uint)context.Tracked.ObjectId;
+        var isPreview = context.Tracked.Address == nint.Zero;
         var onlyMine = debuffs ? context.Profile.DebuffRow.OnlyMine : context.Profile.BuffRow.OnlyMine;
         var whitelist = debuffs ? context.Profile.DebuffRow.Whitelist : context.Profile.BuffRow.Whitelist;
         var blacklist = debuffs ? context.Profile.DebuffRow.Blacklist : context.Profile.BuffRow.Blacklist;
@@ -52,27 +58,27 @@ public sealed class BuffRowWidget : INameplateWidget
                 continue;
             }
 
-            if (onlyMine && status.SourceId != localId)
+            if (!isPreview && onlyMine && status.SourceId != localId)
             {
                 continue;
             }
 
-            if (whitelist.Count > 0 && !whitelist.Contains(status.StatusId))
+            if (!isPreview && whitelist.Count > 0 && !whitelist.Contains(status.StatusId))
             {
                 continue;
             }
 
-            if (blacklist.Contains(status.StatusId))
+            if (!isPreview && blacklist.Contains(status.StatusId))
             {
                 continue;
             }
 
             var minX = debuffs
-                ? x + rowWidth - iconSize - ((iconSize + gap) * drawn)
-                : x + ((iconSize + gap) * drawn);
+                ? x + rowWidth - iconWidth - ((iconWidth + gap) * drawn)
+                : x + ((iconWidth + gap) * drawn);
             var min = new Vector2(minX, y);
-            var max = min + new Vector2(iconSize, iconSize);
-            DrawStatusIcon(context, drawContext, min, max, status, debuffs);
+            var max = min + new Vector2(iconWidth, iconHeight);
+            DrawStatusIcon(context, drawContext, min, max, status, debuffs, rowScale);
             drawn++;
         }
     }
@@ -83,15 +89,24 @@ public sealed class BuffRowWidget : INameplateWidget
         Vector2 min,
         Vector2 max,
         StatusSnapshot status,
-        bool debuffs)
+        bool debuffs,
+        float rowScale)
     {
-        var tint = debuffs ? 0xFFF0B0B0 : 0xFFFFFFFF;
-        var bg = debuffs ? 0xAA3A2020 : 0xAA202A3A;
-        drawContext.DrawFilledRect(min, max, bg, 3f);
+        using var fontScope = GameFontRegistry.PushFont(context.FontFamilyId);
+        var tint = 0xFFFFFFFF;
 
         if (status.IconId != 0)
         {
-            var texture = context.TextureProvider.GetFromGameIcon(new GameIconLookup(status.IconId));
+            ISharedImmediateTexture? texture = null;
+            try
+            {
+                texture = context.TextureProvider.GetFromGameIcon(new GameIconLookup(status.IconId));
+            }
+            catch
+            {
+                texture = null;
+            }
+
             if (texture is not null)
             {
                 drawContext.DrawImage(texture, min + new Vector2(1f, 1f), max - new Vector2(1f, 1f), tint);
@@ -101,12 +116,19 @@ public sealed class BuffRowWidget : INameplateWidget
                 drawContext.DrawFilledRect(min + new Vector2(1f, 1f), max - new Vector2(1f, 1f), debuffs ? 0x80A05050 : 0x805080A0, 2f);
             }
         }
-
-        drawContext.DrawBorder(min, max, 0xFF000000, 3f, 1f);
+        else
+        {
+            drawContext.DrawFilledRect(min + new Vector2(1f, 1f), max - new Vector2(1f, 1f), debuffs ? 0x80A05050 : 0x805080A0, 2f);
+        }
 
         if (status.StackCount > 1)
         {
-            drawContext.DrawText(new Vector2(max.X - 10f, max.Y - 14f), 0xFFFFFFFF, status.StackCount.ToString(), 12f);
+            var stackFontSize = Math.Max(10f, 11f * rowScale);
+            drawContext.DrawText(
+                new Vector2(max.X - (9f * rowScale), max.Y - (13f * rowScale)),
+                0xFFFFFFFF,
+                status.StackCount.ToString(),
+                stackFontSize);
         }
 
         if (status.RemainingTime > 0.05f)
@@ -114,7 +136,41 @@ public sealed class BuffRowWidget : INameplateWidget
             var timeText = status.RemainingTime >= 10f
                 ? $"{MathF.Floor(status.RemainingTime):0}"
                 : $"{status.RemainingTime:0.0}";
-            drawContext.DrawText(new Vector2(min.X + 1f, max.Y - 12f), 0xFFFEFEFE, timeText, 11f);
+            var timerFontSize = Math.Max(10f, 11f * rowScale);
+            var baseFontSize = Math.Max(1f, ImGui.GetFontSize());
+            var timerSize = ImGui.CalcTextSize(timeText) * (timerFontSize / baseFontSize);
+            var platePadX = 3f * rowScale;
+            var platePadY = 1f * rowScale;
+            var plateWidth = timerSize.X + (platePadX * 2f);
+            var plateHeight = timerSize.Y + (platePadY * 2f);
+            var plateMin = new Vector2(
+                min.X + ((max.X - min.X - plateWidth) * 0.5f),
+                max.Y - 1f);
+            var plateMax = new Vector2(plateMin.X + plateWidth, plateMin.Y + plateHeight);
+            drawContext.DrawFilledRect(plateMin, plateMax, 0xC0000000, 2.5f);
+            drawContext.DrawBorder(plateMin, plateMax, 0x70000000, 2.5f, 1f);
+
+            var timerPos = new Vector2(plateMin.X + platePadX, plateMin.Y + platePadY - 0.5f);
+            drawContext.DrawText(new Vector2(timerPos.X - 1f, timerPos.Y), 0xE0000000, timeText, timerFontSize);
+            drawContext.DrawText(new Vector2(timerPos.X + 1f, timerPos.Y), 0xE0000000, timeText, timerFontSize);
+            drawContext.DrawText(new Vector2(timerPos.X, timerPos.Y - 1f), 0xE0000000, timeText, timerFontSize);
+            drawContext.DrawText(new Vector2(timerPos.X, timerPos.Y + 1f), 0xE0000000, timeText, timerFontSize);
+            drawContext.DrawText(timerPos, GetTimerColor(status.RemainingTime), timeText, timerFontSize);
         }
+    }
+
+    private static uint GetTimerColor(float remainingTime)
+    {
+        if (remainingTime < 3f)
+        {
+            return 0xFF5A5AFF;
+        }
+
+        if (remainingTime <= 5f)
+        {
+            return 0xFF5AD9FF;
+        }
+
+        return 0xFF7DFF7D;
     }
 }

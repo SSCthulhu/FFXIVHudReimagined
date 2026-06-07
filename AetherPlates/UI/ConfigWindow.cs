@@ -55,6 +55,9 @@ public sealed class ConfigWindow
             this.onConfigChanged();
         }
 
+        ImGui.Spacing();
+        DrawGlobalDefaultFontSelector();
+
         this.DrawAdvancedCategoryMapping();
         this.layoutEditorWindow.Draw();
 
@@ -166,6 +169,27 @@ public sealed class ConfigWindow
                 ImGui.SameLine();
             }
         }
+    }
+
+    private void DrawGlobalDefaultFontSelector()
+    {
+        ImGui.TextUnformatted("Global Default Nameplate Font");
+        var (ids, labels) = Rendering.GameFontRegistry.GetFontOptions();
+        var normalized = Rendering.GameFontRegistry.NormalizeFamilyId(this.config.DefaultFontFamilyId);
+        var current = Array.IndexOf(ids, normalized);
+        if (current < 0)
+        {
+            current = 0;
+        }
+
+        if (ImGui.Combo("Default Font##nameplate_global_default_font", ref current, labels, labels.Length))
+        {
+            var selectedId = current >= 0 && current < ids.Length ? ids[current] : 0;
+            this.config.DefaultFontFamilyId = Rendering.GameFontRegistry.NormalizeFamilyId(selectedId);
+            this.onConfigChanged();
+        }
+
+        ImGui.TextColored(0xFF9AA1AB, "Categories can inherit this font or override it in Designer.");
     }
 
     private void DrawAdvancedCategoryMapping()
@@ -284,8 +308,23 @@ public sealed class ConfigWindow
         ImGui.Separator();
         ImGui.Spacing();
         var enabled = getCategoryEnabled();
-        var buttonLabel = $"{title} {(enabled ? "(Enabled)" : "(Disabled)")}";
-        if (ImGui.Button(buttonLabel, new Vector2(-1f, 28f)))
+        var isEditing = string.Equals(this.layoutEditorWindow.ActiveCategoryId, categoryId, StringComparison.Ordinal);
+        var usesGlobalFont = visuals.UseGlobalFont ?? visuals.FontFamilyId == 0;
+        var fontModeLabel = usesGlobalFont ? "Global Font" : "Custom Font";
+        if (isEditing)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Button, 0xFF4E3112);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0xFF6B431A);
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0xFF7A4D1E);
+        }
+
+        var buttonLabel = isEditing
+            ? $"{title} {(enabled ? "(Enabled)" : "(Disabled)")}  [Editing]"
+            : $"{title} {(enabled ? "(Enabled)" : "(Disabled)")}";
+        var availWidth = ImGui.GetContentRegionAvail().X;
+        var badgeWidth = 115f;
+        var buttonWidth = Math.Max(180f, availWidth - badgeWidth - 8f);
+        if (ImGui.Button(buttonLabel, new Vector2(buttonWidth, 28f)))
         {
             this.layoutEditorWindow.Open(new LayoutEditorWindow.CategoryEditorTarget(
                 categoryId,
@@ -294,6 +333,16 @@ public sealed class ConfigWindow
                 getCategoryEnabled,
                 setCategoryEnabled,
                 visuals));
+        }
+
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        var badgeColor = usesGlobalFont ? 0xFFA6C8FF : 0xFFFFC38A;
+        ImGui.TextColored(badgeColor, fontModeLabel);
+
+        if (isEditing)
+        {
+            ImGui.PopStyleColor(3);
         }
     }
 

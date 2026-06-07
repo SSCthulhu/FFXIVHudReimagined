@@ -24,6 +24,17 @@ public sealed class DrawContext
         this.drawList.AddText(ImGui.GetFont(), fontSize, position, color, text);
     }
 
+    public void DrawText(Vector2 position, uint color, string text, ImFontPtr font, float fontSize)
+    {
+        if (fontSize <= 0f)
+        {
+            DrawText(position, color, text, fontSize);
+            return;
+        }
+
+        this.drawList.AddText(font, fontSize, position, color, text);
+    }
+
     public void DrawRect(Vector2 min, Vector2 max, uint color, float rounding = 0f, float thickness = 1f)
     {
         this.drawList.AddRect(min, max, color, rounding, ImDrawFlags.None, thickness);

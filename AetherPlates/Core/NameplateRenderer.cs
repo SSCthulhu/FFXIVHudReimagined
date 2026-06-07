@@ -13,6 +13,7 @@ public sealed class NameplateRenderer
     {
         "health_bar",
         "cast_bar",
+        "cast_bar_text",
         "buff_row",
         "debuff_row",
         "target_indicator",

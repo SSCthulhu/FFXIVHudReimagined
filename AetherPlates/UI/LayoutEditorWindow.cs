@@ -30,6 +30,10 @@ public sealed class LayoutEditorWindow
     private readonly StyleManager styleManager;
     private readonly NameplateRenderer previewRenderer;
     private CategoryEditorTarget? activeTarget;
+    private static CategoryVisualSettings? copiedVisualSettings;
+    private static string copiedFromCategoryTitle = string.Empty;
+    private string fontStatusMessage = string.Empty;
+    private string previewErrorMessage = string.Empty;
 
     public LayoutEditorWindow(
         PluginConfiguration config,
@@ -52,6 +56,7 @@ public sealed class LayoutEditorWindow
     }
 
     public bool IsOpen { get; private set; }
+    public string? ActiveCategoryId => this.IsOpen ? this.activeTarget?.Id : null;
 
     public void Open(CategoryEditorTarget target)
     {
@@ -69,6 +74,7 @@ public sealed class LayoutEditorWindow
         var title = $"{this.activeTarget.Title} Designer###AetherPlatesCategoryDesigner";
         var open = this.IsOpen;
         ImGui.SetNextWindowSize(new Vector2(760f, 640f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new Vector2(720f, 640f), new Vector2(4096f, 4096f));
         if (!ImGui.Begin(title, ref open))
         {
             this.IsOpen = open;
@@ -100,14 +106,48 @@ public sealed class LayoutEditorWindow
         }
 
         ImGui.SameLine();
-        ImGui.TextColored(0xFF9AA1AB, "Changes are saved immediately.");
+        if (ImGui.Button("Copy Design"))
+        {
+            copiedVisualSettings = CloneVisualSettings(target.Visuals);
+            copiedFromCategoryTitle = target.Title;
+        }
+
+        ImGui.SameLine();
+        var canPaste = copiedVisualSettings is not null;
+        if (!canPaste)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Paste Design") && copiedVisualSettings is not null)
+        {
+            ApplyVisualSettings(target.Visuals, copiedVisualSettings);
+            this.onConfigChanged();
+        }
+
+        if (!canPaste)
+        {
+            ImGui.EndDisabled();
+        }
+
+        ImGui.SameLine();
+        if (copiedVisualSettings is null)
+        {
+            ImGui.TextColored(0xFF9AA1AB, "No copied design.");
+        }
+        else
+        {
+            ImGui.TextColored(0xFF9AA1AB, $"Copied from: {copiedFromCategoryTitle}");
+        }
         ImGui.Separator();
     }
 
     private void DrawPreview(CategoryEditorTarget target)
     {
         ImGui.TextUnformatted("Preview");
-        var previewSize = new Vector2(Math.Max(280f, ImGui.GetContentRegionAvail().X), 240f);
+        var available = ImGui.GetContentRegionAvail();
+        var previewHeight = Math.Clamp(available.Y * 0.35f, 150f, 190f);
+        var previewSize = new Vector2(Math.Max(280f, available.X), previewHeight);
         var previewPos = ImGui.GetCursorScreenPos();
         ImGui.InvisibleButton("##nameplate_preview_canvas", previewSize);
 
@@ -118,9 +158,25 @@ public sealed class LayoutEditorWindow
         drawList.AddRect(canvasMin, canvasMax, 0xFF2D313B, 6f, ImDrawFlags.None, 1f);
 
         var anchor = previewPos + (previewSize * 0.5f);
-        var context = BuildPreviewContext(target, anchor);
-        context = this.CenterContextByWidgetBounds(context, target.Visuals.EnabledWidgetIdsSet, anchor);
-        this.previewRenderer.DrawNameplate(context, target.Visuals.EnabledWidgetIdsSet);
+        try
+        {
+            var context = BuildPreviewContext(target, anchor);
+            context = this.CenterContextByWidgetBounds(context, target.Visuals.EnabledWidgetIdsSet, anchor);
+            this.previewRenderer.DrawNameplate(context, target.Visuals.EnabledWidgetIdsSet);
+            this.previewErrorMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            this.previewErrorMessage = ex.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(this.previewErrorMessage))
+        {
+            drawList.AddText(
+                canvasMin + new Vector2(10f, 10f),
+                0xFFDD8080,
+                $"Preview render issue: {this.previewErrorMessage}");
+        }
     }
 
     private NameplateContext CenterContextByWidgetBounds(NameplateContext context, IReadOnlySet<string> enabledWidgetIds, Vector2 canvasCenter)
@@ -189,7 +245,8 @@ public sealed class LayoutEditorWindow
             tracked.IsAllianceMember,
             isHostile,
             !isHostile,
-            tracked.Distance);
+            tracked.Distance,
+            this.config.ResolveFontFamilyId(target.Visuals));
     }
 
     private static TrackedObject BuildPreviewTrackedObject(NameplateManager.NameplateCategory category)
@@ -301,10 +358,10 @@ public sealed class LayoutEditorWindow
 
         var statuses = new List<StatusSnapshot>
         {
-            new(0, 1, 18f, 1, false, "Buff", 0),
-            new(0, 2, 12f, 1, false, "Buff", 0),
-            new(0, 1, 7.5f, 2, true, "Debuff", 0),
-            new(0, 1, 22f, 2, true, "Debuff", 0),
+            new(1201, 2, 18f, 1, false, "Buff", 0),
+            new(1202, 1, 12f, 1, false, "Buff", 0),
+            new(2201, 2, 7.5f, 1, true, "Debuff", 0),
+            new(2202, 1, 22f, 1, true, "Debuff", 0),
         };
 
         var cast = new CastSnapshot(true, "Sample Cast", 1.7f, 3.0f, true);
@@ -346,10 +403,14 @@ public sealed class LayoutEditorWindow
         ImGui.Spacing();
         ImGui.TextUnformatted("Widget Settings");
 
+        DrawFontSelector(visuals, categoryId);
+        ImGui.Spacing();
+
         DrawWidgetControls(visuals, categoryId, "health_bar", "Health Bar");
         DrawWidgetControls(visuals, categoryId, "name_text", "Name Text");
         DrawWidgetControls(visuals, categoryId, "target_indicator", "Target Indicator");
         DrawWidgetControls(visuals, categoryId, "cast_bar", "Cast Bar");
+        DrawWidgetControls(visuals, categoryId, "cast_bar_text", "Cast Bar Text");
         DrawWidgetControls(visuals, categoryId, "buff_row", "Buff Row");
         DrawWidgetControls(visuals, categoryId, "debuff_row", "Debuff Row");
     }
@@ -383,12 +444,185 @@ public sealed class LayoutEditorWindow
         }
 
         var size = rule.Size;
-        if (ImGui.DragFloat2($"Size (W/H)##{categoryId}_{widgetId}_size", ref size, 0.5f, 0f, 600f, "%.1f"))
+        if (string.Equals(widgetId, "name_text", StringComparison.Ordinal))
+        {
+            var fontSize = visuals.NameTextFontSize;
+            if (ImGui.DragFloat($"Font Size##{categoryId}_{widgetId}_font_size", ref fontSize, 0.25f, 8f, 64f, "%.1f"))
+            {
+                visuals.NameTextFontSize = Math.Clamp(fontSize, 8f, 64f);
+                this.onConfigChanged();
+            }
+        }
+        else if (string.Equals(widgetId, "cast_bar_text", StringComparison.Ordinal))
+        {
+            var fontSize = visuals.CastBarTextFontSize;
+            if (ImGui.DragFloat($"Font Size##{categoryId}_{widgetId}_font_size", ref fontSize, 0.25f, 8f, 64f, "%.1f"))
+            {
+                visuals.CastBarTextFontSize = Math.Clamp(fontSize, 8f, 64f);
+                this.onConfigChanged();
+            }
+        }
+        else if (string.Equals(widgetId, "buff_row", StringComparison.Ordinal) ||
+                 string.Equals(widgetId, "debuff_row", StringComparison.Ordinal))
+        {
+            var baseWidth = StatusLaneLayout.GetIconWidth(20f) * 8f + (2f * 7f);
+            const float baseHeight = 20f;
+            var currentScale = string.Equals(widgetId, "buff_row", StringComparison.Ordinal)
+                ? visuals.BuffRowScale
+                : visuals.DebuffRowScale;
+            currentScale = Math.Clamp(currentScale, 0.25f, 8f);
+            if (ImGui.DragFloat($"Scale##{categoryId}_{widgetId}_scale", ref currentScale, 0.01f, 0.25f, 8f, "%.2f"))
+            {
+                var clamped = Math.Clamp(currentScale, 0.25f, 8f);
+                if (string.Equals(widgetId, "buff_row", StringComparison.Ordinal))
+                {
+                    visuals.BuffRowScale = clamped;
+                }
+                else
+                {
+                    visuals.DebuffRowScale = clamped;
+                }
+
+                // Keep row bounds proportional so W/H stays uniform with icon scaling.
+                rule.Size = new Vector2(baseWidth * clamped, baseHeight * clamped);
+                this.onConfigChanged();
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Scales icon size, spacing, and timer text while keeping default row dimensions.");
+            }
+        }
+        else if (ImGui.DragFloat2($"Size (W/H)##{categoryId}_{widgetId}_size", ref size, 0.5f, 0f, 600f, "%.1f"))
         {
             rule.Size = new Vector2(Math.Max(0f, size.X), Math.Max(0f, size.Y));
             this.onConfigChanged();
         }
 
         ImGui.Unindent();
+    }
+
+    private void DrawFontSelector(CategoryVisualSettings visuals, string categoryId)
+    {
+        var useGlobalFont = visuals.UseGlobalFont ?? visuals.FontFamilyId == 0;
+        if (ImGui.Checkbox($"Use Global Default Font##{categoryId}_use_global_font", ref useGlobalFont))
+        {
+            visuals.UseGlobalFont = useGlobalFont;
+            this.onConfigChanged();
+        }
+
+        var (ids, labels) = GameFontRegistry.GetFontOptions();
+        var count = Math.Max(1, labels.Length);
+        var normalizedId = GameFontRegistry.NormalizeFamilyId(visuals.FontFamilyId);
+        var current = Array.IndexOf(ids, normalizedId);
+        if (current < 0)
+        {
+            current = 0;
+        }
+
+        if (useGlobalFont)
+        {
+            var resolvedGlobal = GameFontRegistry.NormalizeFamilyId(this.config.DefaultFontFamilyId);
+            var globalIndex = Array.IndexOf(ids, resolvedGlobal);
+            if (globalIndex < 0)
+            {
+                globalIndex = 0;
+            }
+
+            ImGui.TextColored(0xFF9AA1AB, $"Using Global Font: {labels[globalIndex]}");
+        }
+        else
+        {
+            ImGui.TextUnformatted("Font");
+            if (ImGui.Combo($"Font##{categoryId}_font", ref current, labels, labels.Length))
+            {
+                var selectedId = current >= 0 && current < ids.Length ? ids[current] : 0;
+                visuals.FontFamilyId = GameFontRegistry.NormalizeFamilyId(selectedId);
+                this.onConfigChanged();
+            }
+        }
+
+        if (ImGui.Button($"Reload Fonts##{categoryId}_reload_fonts"))
+        {
+            GameFontRegistry.Reload(out this.fontStatusMessage);
+            visuals.FontFamilyId = GameFontRegistry.NormalizeFamilyId(visuals.FontFamilyId);
+            this.onConfigChanged();
+        }
+
+        ImGui.SameLine();
+        ImGui.TextColored(0xFF9AA1AB, "Supports FFXIV fonts and bundled .ttf/.otf in fonts/");
+        if (!string.IsNullOrWhiteSpace(this.fontStatusMessage))
+        {
+            ImGui.TextColored(0xFF9AA1AB, this.fontStatusMessage);
+        }
+    }
+
+    private static CategoryVisualSettings CloneVisualSettings(CategoryVisualSettings source)
+    {
+        var clone = new CategoryVisualSettings
+        {
+            HealthBarEnabled = source.HealthBarEnabled,
+            NameTextEnabled = source.NameTextEnabled,
+            NameTextFontSize = source.NameTextFontSize,
+            TargetIndicatorEnabled = source.TargetIndicatorEnabled,
+            CastBarEnabled = source.CastBarEnabled,
+            CastBarTextEnabled = source.CastBarTextEnabled,
+            CastBarTextFontSize = source.CastBarTextFontSize,
+            BuffRowEnabled = source.BuffRowEnabled,
+            BuffRowScale = source.BuffRowScale,
+            DebuffRowEnabled = source.DebuffRowEnabled,
+            DebuffRowScale = source.DebuffRowScale,
+            UseGlobalFont = source.UseGlobalFont,
+            FontFamilyId = source.FontFamilyId,
+            WidgetLayouts = new Dictionary<string, WidgetLayoutRule>(StringComparer.Ordinal),
+        };
+
+        foreach (var pair in source.WidgetLayouts)
+        {
+            var rule = pair.Value;
+            clone.WidgetLayouts[pair.Key] = new WidgetLayoutRule
+            {
+                WidgetId = rule.WidgetId,
+                Anchor = rule.Anchor,
+                Offset = rule.Offset,
+                Size = rule.Size,
+                Visible = rule.Visible,
+            };
+        }
+
+        return clone;
+    }
+
+    private static void ApplyVisualSettings(CategoryVisualSettings destination, CategoryVisualSettings source)
+    {
+        destination.HealthBarEnabled = source.HealthBarEnabled;
+        destination.NameTextEnabled = source.NameTextEnabled;
+        destination.NameTextFontSize = source.NameTextFontSize;
+        destination.TargetIndicatorEnabled = source.TargetIndicatorEnabled;
+        destination.CastBarEnabled = source.CastBarEnabled;
+        destination.CastBarTextEnabled = source.CastBarTextEnabled;
+        destination.CastBarTextFontSize = source.CastBarTextFontSize;
+        destination.BuffRowEnabled = source.BuffRowEnabled;
+        destination.BuffRowScale = source.BuffRowScale;
+        destination.DebuffRowEnabled = source.DebuffRowEnabled;
+        destination.DebuffRowScale = source.DebuffRowScale;
+        destination.UseGlobalFont = source.UseGlobalFont;
+        destination.FontFamilyId = source.FontFamilyId;
+
+        destination.WidgetLayouts = new Dictionary<string, WidgetLayoutRule>(StringComparer.Ordinal);
+        foreach (var pair in source.WidgetLayouts)
+        {
+            var rule = pair.Value;
+            destination.WidgetLayouts[pair.Key] = new WidgetLayoutRule
+            {
+                WidgetId = rule.WidgetId,
+                Anchor = rule.Anchor,
+                Offset = rule.Offset,
+                Size = rule.Size,
+                Visible = rule.Visible,
+            };
+        }
+
+        destination.EnsureDefaults();
     }
 }

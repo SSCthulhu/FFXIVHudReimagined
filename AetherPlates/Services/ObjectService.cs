@@ -8,6 +8,7 @@ using Dalamud.Plugin.Services;
 using FFXIVHudPlugin.AetherPlates.Data;
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace FFXIVHudPlugin.AetherPlates.Services;
 
@@ -132,7 +133,7 @@ public sealed class ObjectService
             maxHp,
             shieldRatio,
             obj.Position,
-            character?.HitboxRadius ?? 0f,
+            ResolveModelHeight(obj, character),
             obj.IsTargetable,
             distance,
             character?.ClassJob.RowId ?? 0u,
@@ -206,6 +207,31 @@ public sealed class ObjectService
             ObjectKind.EventObj => "Event Object",
             _ => string.Empty,
         };
+    }
+
+    private static unsafe float ResolveModelHeight(IGameObject obj, ICharacter? character)
+    {
+        if (obj.Address != nint.Zero)
+        {
+            var nativeObject = (StructsGameObject*)obj.Address;
+            if (nativeObject != null)
+            {
+                var nativeHeight = MathF.Max(0f, nativeObject->Height);
+                if (nativeHeight > 0.01f)
+                {
+                    return nativeHeight;
+                }
+            }
+        }
+
+        var hitboxRadius = character?.HitboxRadius ?? 0f;
+        if (hitboxRadius > 0.01f)
+        {
+            return hitboxRadius * 2f;
+        }
+
+        // Safe fallback for object kinds that don't expose character hitbox/height reliably.
+        return 1.9f;
     }
 
     private static unsafe EnemyNameplateState ResolveEnemyState(

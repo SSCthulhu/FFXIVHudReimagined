@@ -68,12 +68,20 @@ public sealed class StyleManager
             Size = new System.Numerics.Vector2(140f, 10f),
             Visible = true,
         };
+        style.WidgetLayouts["cast_bar_text"] = new WidgetLayoutRule
+        {
+            WidgetId = "cast_bar_text",
+            Anchor = Layout.WidgetAnchor.Top,
+            Offset = new System.Numerics.Vector2(0f, -20f),
+            Size = new System.Numerics.Vector2(180f, 18f),
+            Visible = true,
+        };
         style.WidgetLayouts["buff_row"] = new WidgetLayoutRule
         {
             WidgetId = "buff_row",
             Anchor = Layout.WidgetAnchor.TopRight,
             Offset = new System.Numerics.Vector2(76f, -32f),
-            Size = new System.Numerics.Vector2(160f, 20f),
+            Size = new System.Numerics.Vector2(138.8f, 20f),
             Visible = true,
         };
         style.WidgetLayouts["debuff_row"] = new WidgetLayoutRule
@@ -81,7 +89,7 @@ public sealed class StyleManager
             WidgetId = "debuff_row",
             Anchor = Layout.WidgetAnchor.TopLeft,
             Offset = new System.Numerics.Vector2(-76f, -32f),
-            Size = new System.Numerics.Vector2(160f, 20f),
+            Size = new System.Numerics.Vector2(138.8f, 20f),
             Visible = true,
         };
 

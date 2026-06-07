@@ -4,6 +4,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Gui.NamePlate;
+using FFXIVHudPlugin.AetherPlates.Rendering;
 using FFXIVHudPlugin.AetherPlates.Core;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System.Numerics;
@@ -103,6 +104,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
         this.partyList = partyList;
         this.dataManager = dataManager;
         this.pluginLog = pluginLog;
+        GameFontRegistry.Initialize(
+            pluginInterface.UiBuilder,
+            pluginLog,
+            pluginInterface.AssemblyLocation.DirectoryName,
+            pluginInterface.GetPluginConfigDirectory());
         this.configuration = pluginInterface.GetPluginConfig() as HudConfiguration ?? new HudConfiguration();
         this.configuration.Initialize(pluginInterface);
         this.stateProvider = new HudStateProvider(

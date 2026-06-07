@@ -28,6 +28,7 @@ public sealed class TargetIndicatorWidget : INameplateWidget
 
         drawContext.DrawGlow(min - new Vector2(2f, 2f), max + new Vector2(2f, 2f), 0x8064A8FF, 2.5f);
         var scaleFactor = Math.Clamp(context.GlobalScale, 0.5f, 3.0f);
+        using var fontScope = GameFontRegistry.PushFont(context.FontFamilyId);
         drawContext.DrawText(center + new Vector2(-4f, -10f) * scaleFactor, color, "▼", 14f * scaleFactor);
     }
 }

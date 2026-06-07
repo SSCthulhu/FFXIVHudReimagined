@@ -60,19 +60,5 @@ public sealed class CastBarWidget : INameplateWidget
                 0xFF4DCC4D,
                 1f);
         }
-
-        var castName = string.IsNullOrWhiteSpace(cast.ActionName) ? "Casting..." : cast.ActionName;
-        var scaleFactor = Math.Clamp(context.GlobalScale, 0.5f, 3.0f);
-        var textPos = new Vector2(min.X, min.Y + (2f * scaleFactor));
-        var stroke = Math.Max(1f, 1.2f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(-stroke, 0f), 0xF0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(stroke, 0f), 0xF0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(0f, -stroke), 0xF0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(0f, stroke), 0xF0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(-stroke, -stroke), 0xD0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(stroke, -stroke), 0xD0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(-stroke, stroke), 0xD0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos + new Vector2(stroke, stroke), 0xD0000000, castName, 14f * scaleFactor);
-        drawContext.DrawText(textPos, 0xFFFFFFFF, castName, 14f * scaleFactor);
     }
 }
