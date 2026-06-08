@@ -4,7 +4,7 @@
   "Punchline": "Center-orb HUD with mirrored hotbars.",
   "Description": "A custom Dalamud HUD layout with HP orb, MP ring, mirrored hotbars, status rows, class gauge, limit break bubbles, and optional custom minimap.",
   "InternalName": "FFXIVHudReimagined",
-  "AssemblyVersion": "0.0.66.1",
+  "AssemblyVersion": "0.0.66.2",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/SSCthulhu/FFXIVHudReimagined",
   "Tags": [

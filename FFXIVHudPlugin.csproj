@@ -6,7 +6,7 @@
     <DalamudApiLevel>15</DalamudApiLevel>
     <Authors>carle</Authors>
     <Description>FFXIV Hud Reimagined — custom HUD with center orb and mirrored hotbars.</Description>
-    <Version>0.0.66.1</Version>
+    <Version>0.0.66.2</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -23,4 +23,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="CreateReimaginedPluginAliases" AfterTargets="Build">
+    <Copy
+      SourceFiles="$(TargetDir)FFXIVHudPlugin.dll"
+      DestinationFiles="$(TargetDir)FFXIVHudReimagined.dll"
+      SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="$(TargetDir)FFXIVHudPlugin.deps.json"
+      DestinationFiles="$(TargetDir)FFXIVHudReimagined.deps.json"
+      SkipUnchangedFiles="true" />
+  </Target>
 </Project>
