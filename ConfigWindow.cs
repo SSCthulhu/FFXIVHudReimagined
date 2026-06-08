@@ -10,6 +10,7 @@ public sealed class ConfigWindow
     private const float NavButtonHeight = 30f;
     private const float PresetButtonHeight = 36f;
     private const bool ShowDeveloperMinimapAdvancedSection = false;
+    private const bool ShowDeveloperActionCameraAdvancedSection = false;
 
     private readonly HudConfiguration config;
     private readonly AetherPlates.UI.ConfigWindow aetherPlatesConfigWindow;
@@ -148,10 +149,10 @@ public sealed class ConfigWindow
                 this.DrawHudLayoutBucket();
                 break;
             case ConfigBucket.Minimap:
-                this.DrawMinimapSettingsTab();
+                this.DrawMinimapBucket();
                 break;
             case ConfigBucket.ActionCamera:
-                this.DrawActionCameraSettingsTab();
+                this.DrawActionCameraBucket();
                 break;
             case ConfigBucket.Nameplate:
                 this.DrawNameplateBucket();
@@ -207,6 +208,46 @@ public sealed class ConfigWindow
             if (ImGui.BeginTabItem("Category Designer"))
             {
                 this.aetherPlatesConfigWindow.DrawCategoryDesignerSection();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+    }
+
+    private void DrawMinimapBucket()
+    {
+        if (ImGui.BeginTabBar("##MinimapTabs"))
+        {
+            if (ImGui.BeginTabItem("General"))
+            {
+                this.DrawMinimapGeneralTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Layout"))
+            {
+                this.DrawMinimapLayoutTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Markers"))
+            {
+                this.DrawMinimapMarkersTab();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+    }
+
+    private void DrawActionCameraBucket()
+    {
+        if (ImGui.BeginTabBar("##ActionCameraTabs"))
+        {
+            if (ImGui.BeginTabItem("General"))
+            {
+                this.DrawActionCameraSettingsTab();
                 ImGui.EndTabItem();
             }
 
@@ -314,17 +355,20 @@ public sealed class ConfigWindow
             this.NotifyActionCameraConfigChanged();
         }
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-        ImGui.TextUnformatted("Advanced");
-        ImGui.TextColored(0xFF9AA1AB, "Enable only when troubleshooting camera behavior.");
-
-        var showDebug = actionConfig.ShowDebugOverlay;
-        if (DrawSettingCheckbox("Show Debug Overlay", ref showDebug))
+        if (ShowDeveloperActionCameraAdvancedSection)
         {
-            actionConfig.ShowDebugOverlay = showDebug;
-            this.NotifyActionCameraConfigChanged();
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+            ImGui.TextUnformatted("Advanced");
+            ImGui.TextColored(0xFF9AA1AB, "Enable only when troubleshooting camera behavior.");
+
+            var showDebug = actionConfig.ShowDebugOverlay;
+            if (DrawSettingCheckbox("Show Debug Overlay", ref showDebug))
+            {
+                actionConfig.ShowDebugOverlay = showDebug;
+                this.NotifyActionCameraConfigChanged();
+            }
         }
     }
 
@@ -787,12 +831,11 @@ public sealed class ConfigWindow
         this.DrawHotbar2SlotSizeGapControls();
     }
 
-    private void DrawMinimapSettingsTab()
+    private void DrawMinimapGeneralTab()
     {
-        ImGui.TextUnformatted("Minimap Settings");
+        ImGui.TextUnformatted("General");
         ImGui.Spacing();
 
-        ImGui.TextUnformatted("General");
         var minimapEnabled = this.config.MinimapEnabled;
         if (DrawSettingCheckbox("Minimap Enabled", ref minimapEnabled))
         {
@@ -826,39 +869,13 @@ public sealed class ConfigWindow
         }
 
         ImGui.TextColored(0xFF9AA1AB, "Shows N / E / S / W labels around the minimap edge.");
+    }
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-        ImGui.TextUnformatted("Map Markers");
-        ImGui.TextColored(
-            0xFF9AA1AB,
-            "Map flag, gathering, FATEs (FateManager), quest events, then minimap pins from AgentMap.");
-
-        var showNativeMarkers = this.config.MinimapShowNativeMarkers;
-        if (DrawSettingCheckbox("Show Map Markers", ref showNativeMarkers))
-        {
-            this.config.MinimapShowNativeMarkers = showNativeMarkers;
-            this.config.Save();
-        }
-
-        var markerIconSize = this.config.MinimapMarkerIconSize;
-        if (DrawPreciseFloat(
-                "Map Marker Icon Size",
-                ref markerIconSize,
-                MinimapLayout.MinMarkerIconSize,
-                MinimapLayout.MaxMarkerIconSize,
-                "%.0f",
-                1f))
-        {
-            this.config.MinimapMarkerIconSize = MinimapLayout.ClampMarkerIconSize(markerIconSize);
-            this.config.Save();
-        }
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+    private void DrawMinimapLayoutTab()
+    {
         ImGui.TextUnformatted("Layout");
+        ImGui.Spacing();
+
         ImGui.TextColored(0xFF9AA1AB, "Zoom (yalms): lower = closer view, higher = more territory. Map and markers use the same range.");
 
         var minimapOffsetBounds = MinimapLayout.GetOffsetBounds(
@@ -937,6 +954,35 @@ public sealed class ConfigWindow
         ImGui.TextColored(
             0xFF9AA1AB,
             $"Offsets use screen pixels from the viewport center (±{minimapOffsetBounds.MaxX:0} X, ±{minimapOffsetBounds.MaxY:0} Y).");
+    }
+
+    private void DrawMinimapMarkersTab()
+    {
+        ImGui.TextUnformatted("Map Markers");
+        ImGui.Spacing();
+        ImGui.TextColored(
+            0xFF9AA1AB,
+            "Map flag, gathering, FATEs (FateManager), quest events, then minimap pins from AgentMap.");
+
+        var showNativeMarkers = this.config.MinimapShowNativeMarkers;
+        if (DrawSettingCheckbox("Show Map Markers", ref showNativeMarkers))
+        {
+            this.config.MinimapShowNativeMarkers = showNativeMarkers;
+            this.config.Save();
+        }
+
+        var markerIconSize = this.config.MinimapMarkerIconSize;
+        if (DrawPreciseFloat(
+                "Map Marker Icon Size",
+                ref markerIconSize,
+                MinimapLayout.MinMarkerIconSize,
+                MinimapLayout.MaxMarkerIconSize,
+                "%.0f",
+                1f))
+        {
+            this.config.MinimapMarkerIconSize = MinimapLayout.ClampMarkerIconSize(markerIconSize);
+            this.config.Save();
+        }
 
         ImGui.Spacing();
         ImGui.Separator();
