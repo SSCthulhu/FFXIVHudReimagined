@@ -4,7 +4,7 @@
     <RootNamespace>FFXIVHudPlugin</RootNamespace>
     <TargetFramework>net10.0</TargetFramework>
     <DalamudApiLevel>15</DalamudApiLevel>
-    <Authors>carle</Authors>
+    <Authors>SSCthulhu</Authors>
     <Description>FFXIV Hud Reimagined — custom HUD with center orb and mirrored hotbars.</Description>
     <Version>0.0.66.2</Version>
     <Nullable>enable</Nullable>
