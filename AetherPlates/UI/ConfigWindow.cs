@@ -3,21 +3,25 @@ using FFXIVHudPlugin.AetherPlates.Configuration;
 using FFXIVHudPlugin.AetherPlates.Core;
 using FFXIVHudPlugin.AetherPlates.Layout;
 using Dalamud.Plugin.Services;
+using System.Text.Json;
 using System.Numerics;
 
 namespace FFXIVHudPlugin.AetherPlates.UI;
 
 public sealed class ConfigWindow
 {
-    private readonly PluginConfiguration config;
+    private PluginConfiguration config;
     private readonly Action onConfigChanged;
     private readonly LayoutEditorWindow layoutEditorWindow;
     private string buffWhitelistInput = string.Empty;
     private string buffBlacklistInput = string.Empty;
     private string debuffWhitelistInput = string.Empty;
     private string debuffBlacklistInput = string.Empty;
+    private string profileNameInput = string.Empty;
     private GroupTab selectedGroupTab = GroupTab.Own;
     private GeneralSessionBaseline generalBaseline;
+    private CategoryVisualSettings? copiedCategoryVisualSettings;
+    private string copiedCategoryVisualSourceLabel = string.Empty;
 
     public ConfigWindow(
         PluginConfiguration config,
@@ -38,6 +42,13 @@ public sealed class ConfigWindow
         this.DrawCategoryDesignerSection();
     }
 
+    public void UpdateConfiguration(PluginConfiguration configuration)
+    {
+        this.config = configuration;
+        this.layoutEditorWindow.UpdateConfiguration(configuration);
+        this.CaptureSessionBaselines();
+    }
+
     public void DrawGeneralSettingsSection()
     {
         ImGui.TextUnformatted("Nameplate General Settings");
@@ -48,6 +59,10 @@ public sealed class ConfigWindow
         }
         ImGui.SameLine();
         ImGui.TextColored(0xFF9AA1AB, "Changes save automatically.");
+        ImGui.Separator();
+        ImGui.Spacing();
+        this.DrawSavedProfilesSection();
+        ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
@@ -183,6 +198,244 @@ public sealed class ConfigWindow
         ImGui.TextColored(0xFF9AA1AB, "Per-category widget visibility and layout are configured in Category Designer.");
     }
 
+    private void DrawSavedProfilesSection()
+    {
+        this.config.SavedProfiles ??= new List<NameplateSavedProfile>();
+        this.config.SelectedSavedProfileId ??= string.Empty;
+        this.profileNameInput ??= string.Empty;
+
+        ImGui.TextUnformatted("Saved Nameplate Profiles");
+        ImGui.TextColored(0xFF9AA1AB, "Save and load full Nameplate setups (general, visibility, and category visuals).");
+        ImGui.Spacing();
+
+        if (this.config.SavedProfiles.Count == 0)
+        {
+            ImGui.TextColored(0xFF9AA1AB, "No saved profiles yet.");
+        }
+        else
+        {
+            var selectedIndex = 0;
+            var labels = new string[this.config.SavedProfiles.Count];
+            for (var i = 0; i < this.config.SavedProfiles.Count; i++)
+            {
+                labels[i] = this.config.SavedProfiles[i].DisplayName;
+                if (string.Equals(this.config.SavedProfiles[i].Id, this.config.SelectedSavedProfileId, StringComparison.Ordinal))
+                {
+                    selectedIndex = i;
+                }
+            }
+
+            if (ImGui.Combo("Saved Profile", ref selectedIndex, labels, labels.Length))
+            {
+                this.config.SelectedSavedProfileId = this.config.SavedProfiles[selectedIndex].Id;
+                this.profileNameInput = this.config.SavedProfiles[selectedIndex].DisplayName;
+                this.onConfigChanged();
+            }
+
+            if (string.IsNullOrWhiteSpace(this.config.SelectedSavedProfileId))
+            {
+                this.config.SelectedSavedProfileId = this.config.SavedProfiles[0].Id;
+                this.profileNameInput = this.config.SavedProfiles[0].DisplayName;
+            }
+        }
+
+        ImGui.InputText("Profile Name", ref this.profileNameInput, 80);
+        if (ImGui.Button("Save as New"))
+        {
+            this.SaveCurrentAsNewProfile();
+        }
+
+        ImGui.SameLine();
+        var hasSelection = this.TryGetSelectedSavedProfileIndex(out var selectedProfileIndex);
+        if (!hasSelection)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Update Selected"))
+        {
+            this.UpdateSelectedSavedProfile(selectedProfileIndex);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Load Selected"))
+        {
+            this.LoadSelectedSavedProfile(selectedProfileIndex);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Delete Selected"))
+        {
+            this.DeleteSelectedSavedProfile(selectedProfileIndex);
+        }
+
+        if (!hasSelection)
+        {
+            ImGui.EndDisabled();
+        }
+    }
+
+    private void SaveCurrentAsNewProfile()
+    {
+        var name = string.IsNullOrWhiteSpace(this.profileNameInput)
+            ? $"Profile {this.config.SavedProfiles.Count + 1}"
+            : this.profileNameInput.Trim();
+        var snapshot = this.CloneNameplateConfiguration(this.config);
+        var saved = new NameplateSavedProfile
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            DisplayName = name,
+            Snapshot = snapshot,
+        };
+        this.config.SavedProfiles.Add(saved);
+        this.config.SelectedSavedProfileId = saved.Id;
+        this.profileNameInput = saved.DisplayName;
+        this.onConfigChanged();
+    }
+
+    private void UpdateSelectedSavedProfile(int selectedProfileIndex)
+    {
+        if (selectedProfileIndex < 0 || selectedProfileIndex >= this.config.SavedProfiles.Count)
+        {
+            return;
+        }
+
+        var selected = this.config.SavedProfiles[selectedProfileIndex];
+        selected.DisplayName = string.IsNullOrWhiteSpace(this.profileNameInput) ? selected.DisplayName : this.profileNameInput.Trim();
+        selected.Snapshot = this.CloneNameplateConfiguration(this.config);
+        this.config.SavedProfiles[selectedProfileIndex] = selected;
+        this.config.SelectedSavedProfileId = selected.Id;
+        this.profileNameInput = selected.DisplayName;
+        this.onConfigChanged();
+    }
+
+    private void LoadSelectedSavedProfile(int selectedProfileIndex)
+    {
+        if (selectedProfileIndex < 0 || selectedProfileIndex >= this.config.SavedProfiles.Count)
+        {
+            return;
+        }
+
+        var selected = this.config.SavedProfiles[selectedProfileIndex];
+        this.ApplySnapshotToCurrentConfiguration(selected.Snapshot);
+        this.config.SelectedSavedProfileId = selected.Id;
+        this.profileNameInput = selected.DisplayName;
+        this.layoutEditorWindow.UpdateConfiguration(this.config);
+        this.CaptureSessionBaselines();
+        this.onConfigChanged();
+    }
+
+    private void DeleteSelectedSavedProfile(int selectedProfileIndex)
+    {
+        if (selectedProfileIndex < 0 || selectedProfileIndex >= this.config.SavedProfiles.Count)
+        {
+            return;
+        }
+
+        this.config.SavedProfiles.RemoveAt(selectedProfileIndex);
+        if (this.config.SavedProfiles.Count == 0)
+        {
+            this.config.SelectedSavedProfileId = string.Empty;
+            this.profileNameInput = string.Empty;
+        }
+        else
+        {
+            var nextIndex = Math.Clamp(selectedProfileIndex, 0, this.config.SavedProfiles.Count - 1);
+            this.config.SelectedSavedProfileId = this.config.SavedProfiles[nextIndex].Id;
+            this.profileNameInput = this.config.SavedProfiles[nextIndex].DisplayName;
+        }
+
+        this.onConfigChanged();
+    }
+
+    private bool TryGetSelectedSavedProfileIndex(out int index)
+    {
+        index = -1;
+        if (this.config.SavedProfiles.Count == 0)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(this.config.SelectedSavedProfileId))
+        {
+            index = 0;
+            this.config.SelectedSavedProfileId = this.config.SavedProfiles[0].Id;
+            this.profileNameInput = this.config.SavedProfiles[0].DisplayName;
+            return true;
+        }
+
+        for (var i = 0; i < this.config.SavedProfiles.Count; i++)
+        {
+            if (string.Equals(this.config.SavedProfiles[i].Id, this.config.SelectedSavedProfileId, StringComparison.Ordinal))
+            {
+                index = i;
+                return true;
+            }
+        }
+
+        index = 0;
+        this.config.SelectedSavedProfileId = this.config.SavedProfiles[0].Id;
+        this.profileNameInput = this.config.SavedProfiles[0].DisplayName;
+        return true;
+    }
+
+    private PluginConfiguration CloneNameplateConfiguration(PluginConfiguration source)
+    {
+        var json = JsonSerializer.Serialize(source);
+        return JsonSerializer.Deserialize<PluginConfiguration>(json) ?? new PluginConfiguration();
+    }
+
+    private void ApplySnapshotToCurrentConfiguration(PluginConfiguration snapshot)
+    {
+        var clone = this.CloneNameplateConfiguration(snapshot);
+        this.config.Enabled = clone.Enabled;
+        this.config.VerticalOffset = clone.VerticalOffset;
+        this.config.TemporaryGlobalScale = clone.TemporaryGlobalScale;
+        this.config.EnableDistanceCulling = clone.EnableDistanceCulling;
+        this.config.EnemyMaxDistanceYalms = clone.EnemyMaxDistanceYalms;
+        this.config.FriendlyMaxDistanceYalms = clone.FriendlyMaxDistanceYalms;
+        this.config.PlayerMaxDistanceYalms = clone.PlayerMaxDistanceYalms;
+        this.config.EnableDynamicCombatRange = clone.EnableDynamicCombatRange;
+        this.config.CombatEnemyMaxDistanceYalms = clone.CombatEnemyMaxDistanceYalms;
+        this.config.CombatFriendlyMaxDistanceYalms = clone.CombatFriendlyMaxDistanceYalms;
+        this.config.EnableOcclusionCulling = clone.EnableOcclusionCulling;
+        this.config.OcclusionMode = clone.OcclusionMode;
+        this.config.OcclusionType = clone.OcclusionType;
+        this.config.BossTargetBarAnchorOffset = clone.BossTargetBarAnchorOffset;
+        this.config.DefaultFontFamilyId = clone.DefaultFontFamilyId;
+        this.config.CategoryVisibility = clone.CategoryVisibility;
+        this.config.SelfVisual = clone.SelfVisual;
+        this.config.SelfCompanionVisual = clone.SelfCompanionVisual;
+        this.config.SelfPetVisual = clone.SelfPetVisual;
+        this.config.PartyVisual = clone.PartyVisual;
+        this.config.PartyCompanionVisual = clone.PartyCompanionVisual;
+        this.config.PartyPetVisual = clone.PartyPetVisual;
+        this.config.AllianceVisual = clone.AllianceVisual;
+        this.config.AlliancePetVisual = clone.AlliancePetVisual;
+        this.config.FriendVisual = clone.FriendVisual;
+        this.config.FriendCompanionVisual = clone.FriendCompanionVisual;
+        this.config.FriendPetVisual = clone.FriendPetVisual;
+        this.config.OtherPcVisual = clone.OtherPcVisual;
+        this.config.OtherCompanionVisual = clone.OtherCompanionVisual;
+        this.config.OtherPetVisual = clone.OtherPetVisual;
+        this.config.EnemyUnengagedVisual = clone.EnemyUnengagedVisual;
+        this.config.EnemyEngagedVisual = clone.EnemyEngagedVisual;
+        this.config.EnemyClaimedVisual = clone.EnemyClaimedVisual;
+        this.config.EnemyUnclaimedVisual = clone.EnemyUnclaimedVisual;
+        this.config.EnemyFeastVisual = clone.EnemyFeastVisual;
+        this.config.EnemyFeastPetVisual = clone.EnemyFeastPetVisual;
+        this.config.BossVisual = clone.BossVisual;
+        this.config.NpcVisual = clone.NpcVisual;
+        this.config.ObjectVisual = clone.ObjectVisual;
+        this.config.MinionVisual = clone.MinionVisual;
+        this.config.HousingFurnitureVisual = clone.HousingFurnitureVisual;
+        this.config.HousingFieldVisual = clone.HousingFieldVisual;
+        this.config.ActiveProfileId = clone.ActiveProfileId;
+        this.config.Profiles = clone.Profiles;
+        this.config.InvalidateCaches();
+        _ = this.config.GetActiveProfile();
+    }
+
     private void ResetGeneralSettings()
     {
         this.config.Enabled = this.generalBaseline.Enabled;
@@ -301,6 +554,7 @@ public sealed class ConfigWindow
 
     private void DrawAdvancedCategoryMapping()
     {
+        _ = this.config.GetActiveProfile();
         var v = this.config.CategoryVisibility;
         ImGui.TextUnformatted("Category Designer");
         ImGui.TextColored(0xFF9AA1AB, "Select a category to open its dedicated visual editor.");
@@ -318,48 +572,48 @@ public sealed class ConfigWindow
                     NameplateManager.NameplateCategory.Self,
                     () => v.Self,
                     value => v.Self = value,
-                    this.config.SelfVisual);
+                    this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Self));
                 DrawCategorySection(
                     "Companions",
                     "own_companion",
                     NameplateManager.NameplateCategory.SelfCompanion,
                     () => v.SelfCompanion,
                     value => v.SelfCompanion = value,
-                    this.config.SelfCompanionVisual);
+                    this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.SelfCompanion));
                 DrawCategorySection(
                     "Pets",
                     "own_pet",
                     NameplateManager.NameplateCategory.SelfPet,
                     () => v.SelfPet,
                     value => v.SelfPet = value,
-                    this.config.SelfPetVisual);
+                    this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.SelfPet));
                 break;
             case GroupTab.Others:
-                DrawCategorySection("Party Members", "party_member", NameplateManager.NameplateCategory.Party, () => v.PartyMember, value => v.PartyMember = value, this.config.PartyVisual);
-                DrawCategorySection("Party Companions", "party_companion", NameplateManager.NameplateCategory.PartyCompanion, () => v.PartyCompanion, value => v.PartyCompanion = value, this.config.PartyCompanionVisual);
-                DrawCategorySection("Party Pets", "party_pet", NameplateManager.NameplateCategory.PartyPet, () => v.PartyPet, value => v.PartyPet = value, this.config.PartyPetVisual);
-                DrawCategorySection("Alliance Members", "alliance_member", NameplateManager.NameplateCategory.Alliance, () => v.AllianceMember, value => v.AllianceMember = value, this.config.AllianceVisual);
-                DrawCategorySection("Alliance Pets", "alliance_pet", NameplateManager.NameplateCategory.AlliancePet, () => v.AlliancePet, value => v.AlliancePet = value, this.config.AlliancePetVisual);
-                DrawCategorySection("Friends", "friend", NameplateManager.NameplateCategory.Friend, () => v.Friend, value => v.Friend = value, this.config.FriendVisual);
-                DrawCategorySection("Friend Companions", "friend_companion", NameplateManager.NameplateCategory.FriendCompanion, () => v.FriendCompanion, value => v.FriendCompanion = value, this.config.FriendCompanionVisual);
-                DrawCategorySection("Friend Pets", "friend_pet", NameplateManager.NameplateCategory.FriendPet, () => v.FriendPet, value => v.FriendPet = value, this.config.FriendPetVisual);
-                DrawCategorySection("Other PCs", "other_pc", NameplateManager.NameplateCategory.OtherPc, () => v.OtherPc, value => v.OtherPc = value, this.config.OtherPcVisual);
-                DrawCategorySection("Other Companions", "other_companion", NameplateManager.NameplateCategory.OtherCompanion, () => v.OtherCompanion, value => v.OtherCompanion = value, this.config.OtherCompanionVisual);
-                DrawCategorySection("Other Pets", "other_pet", NameplateManager.NameplateCategory.OtherPet, () => v.OtherPet, value => v.OtherPet = value, this.config.OtherPetVisual);
+                DrawCategorySection("Party Members", "party_member", NameplateManager.NameplateCategory.Party, () => v.PartyMember, value => v.PartyMember = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Party));
+                DrawCategorySection("Party Companions", "party_companion", NameplateManager.NameplateCategory.PartyCompanion, () => v.PartyCompanion, value => v.PartyCompanion = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.PartyCompanion));
+                DrawCategorySection("Party Pets", "party_pet", NameplateManager.NameplateCategory.PartyPet, () => v.PartyPet, value => v.PartyPet = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.PartyPet));
+                DrawCategorySection("Alliance Members", "alliance_member", NameplateManager.NameplateCategory.Alliance, () => v.AllianceMember, value => v.AllianceMember = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Alliance));
+                DrawCategorySection("Alliance Pets", "alliance_pet", NameplateManager.NameplateCategory.AlliancePet, () => v.AlliancePet, value => v.AlliancePet = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.AlliancePet));
+                DrawCategorySection("Friends", "friend", NameplateManager.NameplateCategory.Friend, () => v.Friend, value => v.Friend = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Friend));
+                DrawCategorySection("Friend Companions", "friend_companion", NameplateManager.NameplateCategory.FriendCompanion, () => v.FriendCompanion, value => v.FriendCompanion = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.FriendCompanion));
+                DrawCategorySection("Friend Pets", "friend_pet", NameplateManager.NameplateCategory.FriendPet, () => v.FriendPet, value => v.FriendPet = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.FriendPet));
+                DrawCategorySection("Other PCs", "other_pc", NameplateManager.NameplateCategory.OtherPc, () => v.OtherPc, value => v.OtherPc = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.OtherPc));
+                DrawCategorySection("Other Companions", "other_companion", NameplateManager.NameplateCategory.OtherCompanion, () => v.OtherCompanion, value => v.OtherCompanion = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.OtherCompanion));
+                DrawCategorySection("Other Pets", "other_pet", NameplateManager.NameplateCategory.OtherPet, () => v.OtherPet, value => v.OtherPet = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.OtherPet));
                 break;
             case GroupTab.Npcs:
-                DrawCategorySection("Unengaged Enemies", "enemy_unengaged", NameplateManager.NameplateCategory.EnemyUnengaged, () => v.EnemyUnengaged, value => v.EnemyUnengaged = value, this.config.EnemyUnengagedVisual);
-                DrawCategorySection("Engaged Enemies", "enemy_engaged", NameplateManager.NameplateCategory.EnemyEngaged, () => v.EnemyEngaged, value => v.EnemyEngaged = value, this.config.EnemyEngagedVisual);
-                DrawCategorySection("Claimed Enemies", "enemy_claimed", NameplateManager.NameplateCategory.EnemyClaimed, () => v.EnemyClaimed, value => v.EnemyClaimed = value, this.config.EnemyClaimedVisual);
-                DrawCategorySection("Unclaimed Enemies", "enemy_unclaimed", NameplateManager.NameplateCategory.EnemyUnclaimed, () => v.EnemyUnclaimed, value => v.EnemyUnclaimed = value, this.config.EnemyUnclaimedVisual);
-                DrawCategorySection("Feast Enemies", "enemy_feast", NameplateManager.NameplateCategory.EnemyFeast, () => v.EnemyFeast, value => v.EnemyFeast = value, this.config.EnemyFeastVisual);
-                DrawCategorySection("Feast Enemy Pets", "enemy_feast_pet", NameplateManager.NameplateCategory.EnemyFeastPet, () => v.EnemyFeastPet, value => v.EnemyFeastPet = value, this.config.EnemyFeastPetVisual);
-                DrawCategorySection("Bosses (Target Bar)", "boss", NameplateManager.NameplateCategory.Boss, () => v.Boss, value => v.Boss = value, this.config.BossVisual);
-                DrawCategorySection("NPCs", "npc", NameplateManager.NameplateCategory.Npc, () => v.Npc, value => v.Npc = value, this.config.NpcVisual);
-                DrawCategorySection("Objects", "object", NameplateManager.NameplateCategory.Object, () => v.Object, value => v.Object = value, this.config.ObjectVisual);
-                DrawCategorySection("Minions", "minion", NameplateManager.NameplateCategory.Minion, () => v.Minion, value => v.Minion = value, this.config.MinionVisual);
-                DrawCategorySection("Housing Furniture", "housing_furniture", NameplateManager.NameplateCategory.HousingFurniture, () => v.HousingFurniture, value => v.HousingFurniture = value, this.config.HousingFurnitureVisual);
-                DrawCategorySection("Housing Gardens", "housing_field", NameplateManager.NameplateCategory.HousingField, () => v.HousingField, value => v.HousingField = value, this.config.HousingFieldVisual);
+                DrawCategorySection("Unengaged Enemies", "enemy_unengaged", NameplateManager.NameplateCategory.EnemyUnengaged, () => v.EnemyUnengaged, value => v.EnemyUnengaged = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.EnemyUnengaged));
+                DrawCategorySection("Engaged Enemies", "enemy_engaged", NameplateManager.NameplateCategory.EnemyEngaged, () => v.EnemyEngaged, value => v.EnemyEngaged = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.EnemyEngaged));
+                DrawCategorySection("Claimed Enemies", "enemy_claimed", NameplateManager.NameplateCategory.EnemyClaimed, () => v.EnemyClaimed, value => v.EnemyClaimed = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.EnemyClaimed));
+                DrawCategorySection("Unclaimed Enemies", "enemy_unclaimed", NameplateManager.NameplateCategory.EnemyUnclaimed, () => v.EnemyUnclaimed, value => v.EnemyUnclaimed = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.EnemyUnclaimed));
+                DrawCategorySection("Feast Enemies", "enemy_feast", NameplateManager.NameplateCategory.EnemyFeast, () => v.EnemyFeast, value => v.EnemyFeast = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.EnemyFeast));
+                DrawCategorySection("Feast Enemy Pets", "enemy_feast_pet", NameplateManager.NameplateCategory.EnemyFeastPet, () => v.EnemyFeastPet, value => v.EnemyFeastPet = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.EnemyFeastPet));
+                DrawCategorySection("Bosses (Target Bar)", "boss", NameplateManager.NameplateCategory.Boss, () => v.Boss, value => v.Boss = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Boss));
+                DrawCategorySection("NPCs", "npc", NameplateManager.NameplateCategory.Npc, () => v.Npc, value => v.Npc = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Npc));
+                DrawCategorySection("Objects", "object", NameplateManager.NameplateCategory.Object, () => v.Object, value => v.Object = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Object));
+                DrawCategorySection("Minions", "minion", NameplateManager.NameplateCategory.Minion, () => v.Minion, value => v.Minion = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.Minion));
+                DrawCategorySection("Housing Furniture", "housing_furniture", NameplateManager.NameplateCategory.HousingFurniture, () => v.HousingFurniture, value => v.HousingFurniture = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.HousingFurniture));
+                DrawCategorySection("Housing Gardens", "housing_field", NameplateManager.NameplateCategory.HousingField, () => v.HousingField, value => v.HousingField = value, this.config.GetVisualSettingsForCategory(NameplateManager.NameplateCategory.HousingField));
                 break;
         }
     }
@@ -418,10 +672,12 @@ public sealed class ConfigWindow
         var buttonLabel = isEditing
             ? $"{title} [Editing]"
             : title;
+        var buttonId = $"{buttonLabel}##category_open_{categoryId}";
         var availWidth = ImGui.GetContentRegionAvail().X;
         var toggleWidth = 28f;
+        var copyPasteWidth = 56f;
         var badgeWidth = 115f;
-        var buttonWidth = Math.Max(180f, availWidth - badgeWidth - toggleWidth - 16f);
+        var buttonWidth = Math.Max(180f, availWidth - badgeWidth - toggleWidth - copyPasteWidth - 20f);
         ImGui.AlignTextToFramePadding();
         var categoryEnabled = enabled;
         if (ImGui.Checkbox($"##category_enabled_{categoryId}", ref categoryEnabled))
@@ -437,7 +693,7 @@ public sealed class ConfigWindow
         }
 
         ImGui.SameLine();
-        if (ImGui.Button(buttonLabel, new Vector2(buttonWidth, 28f)))
+        if (ImGui.Button(buttonId, new Vector2(buttonWidth, 28f)))
         {
             this.layoutEditorWindow.Open(new LayoutEditorWindow.CategoryEditorTarget(
                 categoryId,
@@ -446,6 +702,47 @@ public sealed class ConfigWindow
                 getCategoryEnabled,
                 setCategoryEnabled,
                 visuals));
+        }
+
+        ImGui.SameLine();
+        var copyClicked = ImGui.SmallButton($"C##category_copy_{categoryId}");
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Copy this category layout and visual settings.");
+        }
+
+        if (copyClicked)
+        {
+            this.copiedCategoryVisualSettings = LayoutEditorWindow.CloneVisualSettings(visuals);
+            this.copiedCategoryVisualSourceLabel = title;
+        }
+
+        ImGui.SameLine();
+        var canPaste = this.copiedCategoryVisualSettings is not null;
+        if (!canPaste)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        var pasteClicked = ImGui.SmallButton($"P##category_paste_{categoryId}");
+        if (!canPaste)
+        {
+            ImGui.EndDisabled();
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            var tooltip = canPaste
+                ? $"Paste copied layout settings from {this.copiedCategoryVisualSourceLabel}."
+                : "Copy a category first, then paste here.";
+            ImGui.SetTooltip(tooltip);
+        }
+
+        if (pasteClicked && this.copiedCategoryVisualSettings is not null)
+        {
+            LayoutEditorWindow.ApplyVisualSettings(visuals, this.copiedCategoryVisualSettings);
+            visuals.EnsureDefaults();
+            this.onConfigChanged();
         }
 
         ImGui.SameLine();

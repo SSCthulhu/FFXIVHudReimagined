@@ -60,13 +60,13 @@ public sealed class LayoutEditorWindow
         Action<bool> SetEnabled,
         CategoryVisualSettings Visuals);
 
-    private readonly PluginConfiguration config;
+    private PluginConfiguration config;
     private readonly Action onConfigChanged;
     private readonly ITextureProvider textureProvider;
     private readonly WidgetRegistry widgetRegistry;
     private readonly LayoutEngine layoutEngine;
-    private readonly StyleManager styleManager;
-    private readonly NameplateRenderer previewRenderer;
+    private StyleManager styleManager;
+    private NameplateRenderer previewRenderer;
     private CategoryEditorTarget? activeTarget;
     private static CategoryVisualSettings? copiedVisualSettings;
     private static string copiedFromCategoryTitle = string.Empty;
@@ -93,6 +93,19 @@ public sealed class LayoutEditorWindow
             this.layoutEngine,
             this.styleManager,
             new ImGuiRenderer(ImGuiRenderer.DrawLayer.Window));
+    }
+
+    public void UpdateConfiguration(PluginConfiguration configuration)
+    {
+        this.config = configuration;
+        this.styleManager = new StyleManager(this.config.GetActiveStyles);
+        this.previewRenderer = new NameplateRenderer(
+            this.widgetRegistry,
+            this.layoutEngine,
+            this.styleManager,
+            new ImGuiRenderer(ImGuiRenderer.DrawLayer.Window));
+        this.activeTarget = null;
+        this.IsOpen = false;
     }
 
     public bool IsOpen { get; private set; }
@@ -1233,7 +1246,7 @@ public sealed class LayoutEditorWindow
         }
     }
 
-    private static CategoryVisualSettings CloneVisualSettings(CategoryVisualSettings source)
+    internal static CategoryVisualSettings CloneVisualSettings(CategoryVisualSettings source)
     {
         var clone = new CategoryVisualSettings
         {
@@ -1305,7 +1318,7 @@ public sealed class LayoutEditorWindow
         return clone;
     }
 
-    private static void ApplyVisualSettings(CategoryVisualSettings destination, CategoryVisualSettings source)
+    internal static void ApplyVisualSettings(CategoryVisualSettings destination, CategoryVisualSettings source)
     {
         destination.HealthBarEnabled = source.HealthBarEnabled;
         destination.HealthBarCornerRoundness = source.HealthBarCornerRoundness;

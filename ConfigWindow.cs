@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using System.IO;
 using System.Numerics;
+using System.Text;
 
 namespace FFXIVHudPlugin;
 
@@ -31,6 +32,10 @@ public sealed class ConfigWindow
     private MinimapLayoutSessionBaseline minimapLayoutBaseline;
     private MinimapMarkersSessionBaseline minimapMarkersBaseline;
     private ActionCameraSessionBaseline actionCameraBaseline;
+    private SettingsImportExportScope importExportScope = SettingsImportExportScope.AllComponents;
+    private string exportImportTextBuffer = string.Empty;
+    private string importExportStatusMessage = string.Empty;
+    private bool importExportStatusIsError;
 
     public ConfigWindow(
         HudConfiguration config,
@@ -139,6 +144,11 @@ public sealed class ConfigWindow
         {
             this.selectedBucket = ConfigBucket.Nameplate;
         }
+
+        if (this.DrawSettingsNavButton(ConfigBucket.ImportExport, "Import / Export"))
+        {
+            this.selectedBucket = ConfigBucket.ImportExport;
+        }
     }
 
     private bool DrawSettingsNavButton(ConfigBucket bucket, string label)
@@ -175,6 +185,9 @@ public sealed class ConfigWindow
                 break;
             case ConfigBucket.Nameplate:
                 this.DrawNameplateBucket();
+                break;
+            case ConfigBucket.ImportExport:
+                this.DrawImportExportBucket();
                 break;
             default:
                 this.DrawHudLayoutBucket();
@@ -272,6 +285,121 @@ public sealed class ConfigWindow
 
             ImGui.EndTabBar();
         }
+    }
+
+    private void DrawImportExportBucket()
+    {
+        ImGui.TextUnformatted("Import / Export");
+        ImGui.TextColored(0xFF9AA1AB, "Share-safe copy/paste strings. Import overwrites the selected component scope.");
+        ImGui.Spacing();
+
+        var selectedScopeIndex = (int)this.importExportScope;
+        var scopeLabels = new[]
+        {
+            "All (4 Components)",
+            "HUD Layout Only",
+            "Nameplate Only",
+            "HUD Layout + Nameplate",
+        };
+        if (ImGui.Combo("Scope", ref selectedScopeIndex, scopeLabels, scopeLabels.Length))
+        {
+            this.importExportScope = (SettingsImportExportScope)selectedScopeIndex;
+        }
+
+        ImGui.Spacing();
+        if (ImGui.Button("Generate Export String"))
+        {
+            try
+            {
+                this.exportImportTextBuffer = SettingsImportExport.Export(this.config, this.importExportScope);
+                this.SetImportExportStatus("Export generated. Copy and share the string below.", false);
+            }
+            catch (Exception ex)
+            {
+                this.SetImportExportStatus($"Export failed: {ex.Message}", true);
+            }
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Copy Export"))
+        {
+            if (string.IsNullOrWhiteSpace(this.exportImportTextBuffer))
+            {
+                this.SetImportExportStatus("Nothing to copy yet. Generate or paste a string first.", true);
+            }
+            else
+            {
+                ImGui.SetClipboardText(this.exportImportTextBuffer);
+                this.SetImportExportStatus("Copied import/export string to clipboard.", false);
+            }
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Paste From Clipboard"))
+        {
+            this.exportImportTextBuffer = ImGui.GetClipboardText();
+            this.SetImportExportStatus("Pasted clipboard text into import box.", false);
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Import / Export String");
+        var inputBufferCapacity = Math.Max(4096, this.exportImportTextBuffer.Length + 1024);
+        ImGui.InputTextMultiline(
+            "##ImportExportString",
+            ref this.exportImportTextBuffer,
+            inputBufferCapacity,
+            new Vector2(-1f, 170f));
+
+        ImGui.Spacing();
+        if (ImGui.Button("Apply Import"))
+        {
+            this.TryApplyImport();
+        }
+
+        if (!string.IsNullOrWhiteSpace(this.importExportStatusMessage))
+        {
+            var color = this.importExportStatusIsError ? 0xFF8080FF : 0xFF6BB16B;
+            ImGui.TextColored(color, this.importExportStatusMessage);
+        }
+    }
+
+    private void TryApplyImport()
+    {
+        if (!SettingsImportExport.TryImport(this.exportImportTextBuffer, out var package, out var decodeError))
+        {
+            this.SetImportExportStatus(decodeError, true);
+            return;
+        }
+
+        if (!SettingsImportExport.HasRequiredData(package, this.importExportScope, out var missingError))
+        {
+            this.SetImportExportStatus(missingError, true);
+            return;
+        }
+
+        try
+        {
+            SettingsImportExport.ApplyImportedSettings(
+                this.config,
+                package,
+                this.importExportScope,
+                this.onActionCameraConfigChanged);
+
+            // Nameplate settings may be fully replaced; refresh child config window binding.
+            this.aetherPlatesConfigWindow.UpdateConfiguration(this.config.AetherPlates);
+            this.CaptureSessionBaselines();
+            this.SetImportExportStatus("Import applied successfully for selected scope.", false);
+        }
+        catch (Exception ex)
+        {
+            this.SetImportExportStatus($"Import failed: {ex.Message}", true);
+        }
+    }
+
+    private void SetImportExportStatus(string message, bool isError)
+    {
+        this.importExportStatusMessage = message;
+        this.importExportStatusIsError = isError;
     }
 
     private void DrawActionCameraSettingsTab()
@@ -1980,6 +2108,7 @@ public sealed class ConfigWindow
         Minimap = 1,
         ActionCamera = 2,
         Nameplate = 3,
+        ImportExport = 4,
     }
 
 }

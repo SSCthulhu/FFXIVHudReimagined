@@ -52,6 +52,8 @@ public sealed class PluginConfiguration
     public CategoryVisualSettings HousingFieldVisual { get; set; } = CategoryVisualSettings.CreateDefault();
     public string ActiveProfileId { get; set; } = "default";
     public List<NameplateProfile> Profiles { get; set; } = new();
+    public string SelectedSavedProfileId { get; set; } = string.Empty;
+    public List<NameplateSavedProfile> SavedProfiles { get; set; } = new();
 
     [NonSerialized]
     private HashSet<string>? enabledWidgetIdsSet;
@@ -523,6 +525,14 @@ public sealed class NameplateProfile
             DisplayName = "Default",
         };
     }
+}
+
+[Serializable]
+public sealed class NameplateSavedProfile
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string DisplayName { get; set; } = "New Profile";
+    public PluginConfiguration Snapshot { get; set; } = new();
 }
 
 [Serializable]
