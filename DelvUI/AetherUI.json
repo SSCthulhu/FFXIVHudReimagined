@@ -1,0 +1,9 @@
+{
+  "Name": "Aether UI",
+  "InternalName": "AetherUI",
+  "Author": "Tischel, Aether UI Fork Maintainers",
+  "Punchline": "A standalone customizable HUD with nameplate parity.",
+  "Description": "Aether UI is focused on stable backend behavior and safe profile handling.",
+  "RepoUrl": "https://github.com/SSCthulhu/FFXIVHudReimagined",
+  "Tags": [ "UI", "Nameplates" ]
+}
