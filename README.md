@@ -1,6 +1,6 @@
-# FFXIV Hud Reimagined
+# Aether UI
 
-A Dalamud plugin that replaces the default FFXIV HUD with a custom layout: center HP orb, MP ring, mirrored hotbars, status lanes, class gauge, limit break display, and an optional custom minimap.
+Aether UI is a Dalamud plugin that provides a standalone customizable HUD with nameplate parity, action camera controls, and profile-safe backend behavior.
 
 ## Requirements
 
@@ -21,20 +21,20 @@ Open the plugin config from the Dalamud plugin installer or use the in-game comm
 
 ## Experimental Repo Install (No Build Needed)
 
-For friends/testers, you can install this plugin directly from Dalamud's Experimental Repos without cloning or building.
+For testers, install directly from Dalamud's Custom Plugin Repositories without cloning or building.
 
 - Add this URL in `/xlsettings` -> `Experimental` -> `Custom Plugin Repositories`:
   - `https://raw.githubusercontent.com/SSCthulhu/FFXIVHudReimagined/main/pluginmaster.json`
-- Open Dalamud plugin installer and install `FFXIV Hud Reimagined`.
+- Open Dalamud plugin installer, refresh plugin lists, and install `Aether UI`.
 
 ### Publishing updates for testers
 
-1. Bump `<Version>` in `FFXIVHudPlugin.csproj`.
+1. Build/release the latest `AetherUI.zip` asset from the Aether UI source plugin.
 2. Commit and push to `main`.
-3. Create and push a matching git tag (example: `v0.0.66`):
-   - `git tag v0.0.66`
-   - `git push origin v0.0.66`
-4. GitHub Actions publishes `FFXIVHudPlugin.zip` to Releases automatically.
+3. Create and push a matching git tag (example: `v2.7.0.1-aether.0`):
+   - `git tag v2.7.0.1-aether.0`
+   - `git push origin v2.7.0.1-aether.0`
+4. Publish the `AetherUI.zip` release asset.
 5. Dalamud users get install/update from the same experimental repo URL.
 
 For the full repeatable process, use `PUBLISH_CHECKLIST.md`.
@@ -70,7 +70,7 @@ This repository now includes an isolated Action Camera feature that does not alt
 
 ## Version history
 
-See git commits and tags. Bump the version in `FFXIVHudPlugin.csproj` for each release you test in-game.
+See git commits and tags. Keep pluginmaster `AssemblyVersion` aligned with the released Aether UI plugin version.
 
 ## License
 

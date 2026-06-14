@@ -1,11 +1,11 @@
 [
   {
-    "Author": "SSCthulhu",
-    "Name": "FFXIV Hud Reimagined",
-    "InternalName": "FFXIVHudReimagined",
-    "AssemblyVersion": "0.0.66.3",
-    "Description": "A custom Dalamud HUD layout with HP orb, MP ring, mirrored hotbars, status rows, class gauge, limit break bubbles, optional custom minimap, and standalone action camera.",
-    "Punchline": "Center-orb HUD with mirrored hotbars.",
+    "Author": "Tischel, Aether UI Fork Maintainers",
+    "Name": "Aether UI",
+    "InternalName": "AetherUI",
+    "AssemblyVersion": "2.7.0.1",
+    "Description": "A standalone customizable HUD with nameplate parity, action camera controls, and backend/profile stability improvements.",
+    "Punchline": "Standalone customizable HUD with action camera parity.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/SSCthulhu/FFXIVHudReimagined",
     "DalamudApiLevel": 15,
@@ -13,9 +13,12 @@
       "hud",
       "ui",
       "combat",
-      "action-camera"
+      "action-camera",
+      "nameplates"
     ],
-    "DownloadLinkInstall": "https://github.com/SSCthulhu/FFXIVHudReimagined/releases/latest/download/FFXIVHudPlugin.zip",
-    "DownloadLinkUpdate": "https://github.com/SSCthulhu/FFXIVHudReimagined/releases/latest/download/FFXIVHudPlugin.zip"
+    "IconUrl": "https://github.com/SSCthulhu.png",
+    "Changelog": "https://github.com/SSCthulhu/FFXIVHudReimagined/releases/latest",
+    "DownloadLinkInstall": "https://github.com/SSCthulhu/FFXIVHudReimagined/releases/latest/download/AetherUI.zip",
+    "DownloadLinkUpdate": "https://github.com/SSCthulhu/FFXIVHudReimagined/releases/latest/download/AetherUI.zip"
   }
 ]
