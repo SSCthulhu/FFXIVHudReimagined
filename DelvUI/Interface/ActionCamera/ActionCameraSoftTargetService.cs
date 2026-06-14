@@ -1,6 +1,8 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
+using DelvUI.Helpers;
 using System.Numerics;
 
 namespace DelvUI.Interface.ActionCamera
@@ -324,18 +326,66 @@ namespace DelvUI.Interface.ActionCamera
                 return false;
             }
 
+            if (obj is not IBattleNpc battleNpc)
+            {
+                return false;
+            }
+
+            // Exclude pets (Carbuncle, Eos, etc.), companions, and other friendly battle NPCs.
+            if (battleNpc.BattleNpcKind is not BattleNpcSubKind.Combatant and not BattleNpcSubKind.BNpcPart)
+            {
+                return false;
+            }
+
             character = typedCharacter;
             if (character.CurrentHp == 0 || character.MaxHp == 0)
             {
                 return false;
             }
 
+            // Duty support/trust companions expose class jobs like player characters.
             if (character.ClassJob.RowId != 0)
             {
                 return false;
             }
 
+            if (character.OwnerId != 0 && IsOwnedByPlayerGroup(character.OwnerId))
+            {
+                return false;
+            }
+
+            if (!Utils.IsHostile(obj))
+            {
+                return false;
+            }
+
             return true;
+        }
+
+        private static bool IsOwnedByPlayerGroup(ulong ownerId)
+        {
+            if (ownerId == 0)
+            {
+                return false;
+            }
+
+            ulong playerObjectId = Plugin.ObjectTable.LocalPlayer?.GameObjectId ?? 0;
+            if (ownerId == playerObjectId)
+            {
+                return true;
+            }
+
+            for (int i = 0; i < Plugin.PartyList.Length; i++)
+            {
+                var member = Plugin.PartyList[i];
+                ulong memberObjectId = member?.GameObject?.GameObjectId ?? 0;
+                if (ownerId == memberObjectId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool TryGetScreenCenter(out Vector2 center)

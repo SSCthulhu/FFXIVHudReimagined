@@ -6,10 +6,17 @@ namespace DelvUI.Interface.ActionCamera
 {
     internal sealed class ActionCameraCursorManager : IDisposable
     {
+        private readonly ActionCameraConfig _config;
         private IntPtr _gameWindowHandle = IntPtr.Zero;
         private bool _hidden;
         private bool _clipped;
+        private bool _captured;
         private bool _disposed;
+
+        public ActionCameraCursorManager(ActionCameraConfig config)
+        {
+            _config = config;
+        }
 
         public void Hide()
         {
@@ -41,20 +48,19 @@ namespace DelvUI.Interface.ActionCamera
 
         public void Lock()
         {
-            CenterCursor();
-            if (!TryGetCenterRect(out var rect))
+            if (_config.RestrictToGameWindow && TryLockToGameWindow())
             {
                 return;
             }
 
-            if (ClipCursor(ref rect))
-            {
-                _clipped = true;
-            }
+            ReleaseMouseCapture();
+            LockToMonitorCenter();
         }
 
         public void Unlock()
         {
+            ReleaseMouseCapture();
+
             if (!_clipped)
             {
                 return;
@@ -62,16 +68,6 @@ namespace DelvUI.Interface.ActionCamera
 
             ClipCursor(IntPtr.Zero);
             _clipped = false;
-        }
-
-        public void CenterCursor()
-        {
-            if (!TryGetCenterPoint(out var point))
-            {
-                return;
-            }
-
-            SetCursorPos(point.X, point.Y);
         }
 
         public void Dispose()
@@ -96,6 +92,100 @@ namespace DelvUI.Interface.ActionCamera
 
             var gameWindow = GetGameWindowHandle();
             return gameWindow != IntPtr.Zero && foreground == gameWindow;
+        }
+
+        private bool TryLockToGameWindow()
+        {
+            if (!TryGetGameClientCenterPoint(out var center))
+            {
+                return false;
+            }
+
+            CenterCursor(center);
+            EnsureCursorAtCenter(center);
+
+            var clipRect = new RECT
+            {
+                Left = center.X,
+                Top = center.Y,
+                Right = center.X + 1,
+                Bottom = center.Y + 1
+            };
+
+            AcquireMouseCapture();
+            if (ClipCursor(ref clipRect))
+            {
+                _clipped = true;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void LockToMonitorCenter()
+        {
+            if (!TryGetMonitorCenterPoint(out var center))
+            {
+                return;
+            }
+
+            CenterCursor(center);
+
+            var clipRect = new RECT
+            {
+                Left = center.X,
+                Top = center.Y,
+                Right = center.X + 1,
+                Bottom = center.Y + 1
+            };
+
+            if (ClipCursor(ref clipRect))
+            {
+                _clipped = true;
+            }
+        }
+
+        private void AcquireMouseCapture()
+        {
+            var hwnd = GetGameWindowHandle();
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            if (SetCapture(hwnd) != IntPtr.Zero)
+            {
+                _captured = true;
+            }
+        }
+
+        private void ReleaseMouseCapture()
+        {
+            if (!_captured)
+            {
+                return;
+            }
+
+            ReleaseCapture();
+            _captured = false;
+        }
+
+        private static void CenterCursor(POINT point)
+        {
+            SetCursorPos(point.X, point.Y);
+        }
+
+        private void EnsureCursorAtCenter(POINT center)
+        {
+            if (!GetCursorPos(out var position))
+            {
+                return;
+            }
+
+            if (position.X != center.X || position.Y != center.Y)
+            {
+                CenterCursor(center);
+            }
         }
 
         private IntPtr GetGameWindowHandle()
@@ -129,22 +219,43 @@ namespace DelvUI.Interface.ActionCamera
             return IntPtr.Zero;
         }
 
-        private static bool TryGetCenterRect(out RECT rect)
+        private bool TryGetGameClientScreenRect(out RECT rect)
         {
             rect = default;
-            if (!TryGetCenterPoint(out var point))
+            var hwnd = GetGameWindowHandle();
+            if (hwnd == IntPtr.Zero || IsIconic(hwnd))
             {
                 return false;
             }
 
-            rect.Left = point.X;
-            rect.Top = point.Y;
-            rect.Right = point.X + 1;
-            rect.Bottom = point.Y + 1;
+            if (!GetClientRect(hwnd, out rect))
+            {
+                return false;
+            }
+
+            if (rect.Right <= 0 || rect.Bottom <= 0)
+            {
+                return false;
+            }
+
+            MapWindowPoints(hwnd, IntPtr.Zero, ref rect, 2);
+            return rect.Right > rect.Left && rect.Bottom > rect.Top;
+        }
+
+        private bool TryGetGameClientCenterPoint(out POINT point)
+        {
+            point = default;
+            if (!TryGetGameClientScreenRect(out var rect))
+            {
+                return false;
+            }
+
+            point.X = rect.Left + ((rect.Right - rect.Left) / 2);
+            point.Y = rect.Top + ((rect.Bottom - rect.Top) / 2);
             return true;
         }
 
-        private static bool TryGetCenterPoint(out POINT point)
+        private static bool TryGetMonitorCenterPoint(out POINT point)
         {
             point = default;
             int width = GetSystemMetrics(0);
@@ -171,6 +282,9 @@ namespace DelvUI.Interface.ActionCamera
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetCursorPos(int x, int y);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
 
@@ -179,6 +293,21 @@ namespace DelvUI.Interface.ActionCamera
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool MapWindowPoints(IntPtr hWndFrom, IntPtr hWndTo, ref RECT lpRect, uint cPoints);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetCapture(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool ReleaseCapture();
 
         [DllImport("user32.dll", EntryPoint = "FindWindowExW", SetLastError = true)]
         private static extern IntPtr FindWindowExW(IntPtr hWndParent, IntPtr hWndChildAfter, [MarshalAs(UnmanagedType.LPWStr)] string? lpszClass, [MarshalAs(UnmanagedType.LPWStr)] string? lpszWindow);

@@ -1,3 +1,4 @@
+using DelvUI.Config;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Dalamud.Bindings.ImGui;
@@ -6,14 +7,12 @@ namespace DelvUI.Interface.ActionCamera
 {
     internal sealed class ActionCameraUiStateService
     {
-        public bool IsDalamudOrPluginUiActive
-        {
-            get
-            {
-                var io = ImGui.GetIO();
-                return io.WantCaptureMouse || io.WantTextInput || io.WantCaptureKeyboard;
-            }
-        }
+        public bool IsAetherSettingsOpen => ConfigurationManager.Instance.IsConfigWindowOpened;
+
+        public bool IsPluginMouseCaptureRequested => ImGui.GetIO().WantCaptureMouse;
+
+        public bool IsDalamudOrPluginUiActive =>
+            IsAetherSettingsOpen || IsPluginMouseCaptureRequested;
 
         public bool IsUiFocused =>
             IsAddonVisible("Inventory") ||

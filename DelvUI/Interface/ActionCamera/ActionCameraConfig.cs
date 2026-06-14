@@ -52,15 +52,21 @@ namespace DelvUI.Interface.ActionCamera
         public ActionCameraBackendMode BackendMode = ActionCameraBackendMode.RmbLatch;
         public bool PreventRmbDisruption = true;
 
-        [DragFloat("Horizontal Sensitivity", min = 0.1f, max = 5f, velocity = 0.01f)]
+        [Checkbox("Restrict to Game Window", separator = true)]
         [Order(6, collapseWith = nameof(Enabled))]
-        public float HorizontalSensitivity = 1f;
-
-        [DragFloat("Vertical Sensitivity", min = 0.1f, max = 5f, velocity = 0.01f)]
-        [Order(7, collapseWith = nameof(Enabled))]
-        public float VerticalSensitivity = 1f;
+        public bool RestrictToGameWindow = true;
 
         public bool ShowDebugOverlay = false;
+
+        [ManualDraw]
+        [ManualDrawPriority(44)]
+        [ManualDrawParent(nameof(Enabled))]
+        public bool DrawCameraSensitivityDisclaimer(ref bool changed)
+        {
+            ImGui.TextDisabled("Camera Sensitivity");
+            ImGui.TextWrapped("Action camera turn speed follows FFXIV's native right-click camera behavior. Adjust turn speed using your mouse DPI and in-game camera settings.");
+            return false;
+        }
 
         [ManualDraw]
         [ManualDrawPriority(45)]
@@ -209,22 +215,7 @@ namespace DelvUI.Interface.ActionCamera
             ImGui.TextWrapped("Lock Target: Press the lock target keybind to lock onto your current action-camera target. Press again to unlock.");
             ImGui.TextWrapped("Note: If 'Unlock when Aether UI settings open' is enabled, action camera unlocks while this settings window is open.");
             ImGui.TextWrapped("Safety: Action Camera now auto-releases mouse lock whenever FFXIV is not the active foreground window.");
-            return false;
-        }
-
-        [ManualDraw]
-        [ManualDrawPriority(53)]
-        [ManualDrawParent(nameof(Enabled))]
-        public bool DrawSensitivityHint(ref bool changed)
-        {
-            EnforceLockedDefaults();
-
-            if (BackendMode != ActionCameraBackendMode.RmbLatch)
-            {
-                return false;
-            }
-
-            ImGui.TextWrapped("RMB Latch backend uses game camera look behavior. Sensitivity sliders are primarily used by the experimental direct backend.");
+            ImGui.TextWrapped("Restrict to Game Window anchors the cursor to the FFXIV viewport center while locked, keeping camera control inside the game window.");
             return false;
         }
 
@@ -235,7 +226,8 @@ namespace DelvUI.Interface.ActionCamera
 
         public new static ActionCameraConfig DefaultConfig() => new()
         {
-            Enabled = false
+            Enabled = false,
+            RestrictToGameWindow = true
         };
 
         public void EnforceLockedDefaults()

@@ -1,3 +1,11 @@
+# 2.8.0.0
+- Added Action Camera improvements:
+  * Restrict to Game Window toggle keeps the cursor anchored to the FFXIV viewport while locked.
+  * Soft targeting now ignores player-owned pets (Carbuncle, fairies, etc.) and other friendly battle NPCs.
+  * Added target lock keybind with reticle and nameplate indicators.
+  * Improved unlock stability during fast camera movement.
+  * Added camera sensitivity disclaimer (turn speed follows mouse DPI and in-game camera settings).
+
 # 2.7.0.1
 - Fixed Summoner's Bars.
 - Fixed Party List context menu not working.

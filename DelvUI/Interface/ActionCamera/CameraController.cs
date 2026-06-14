@@ -67,8 +67,8 @@ namespace DelvUI.Interface.ActionCamera
 
             _initialized = true;
 
-            _yaw += deltaX * BaseSensitivity * _config.HorizontalSensitivity;
-            _pitch -= deltaY * BaseSensitivity * _config.VerticalSensitivity;
+            _yaw += deltaX * BaseSensitivity;
+            _pitch -= deltaY * BaseSensitivity;
             _pitch = Math.Clamp(_pitch, PitchMin, PitchMax);
 
             _cameraWriteApplied = _cameraProvider.TrySetYawPitch(_yaw, _pitch);

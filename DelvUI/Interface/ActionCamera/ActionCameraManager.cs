@@ -28,6 +28,9 @@ namespace DelvUI.Interface.ActionCamera
         private float _pendingDeltaX;
         private float _pendingDeltaY;
         private bool _previousEnabledState;
+        private int _pluginMouseCaptureFrames;
+
+        private const int PluginMouseCaptureUnlockFrames = 3;
 
         public ActionCameraManager()
         {
@@ -35,7 +38,7 @@ namespace DelvUI.Interface.ActionCamera
             _config = ConfigurationManager.Instance.GetConfigObject<ActionCameraConfig>();
             _inputManager = new ActionCameraInputManager(_config);
             _uiStateService = new ActionCameraUiStateService();
-            _cursorManager = new ActionCameraCursorManager();
+            _cursorManager = new ActionCameraCursorManager(_config);
             _softTargetService = new ActionCameraSoftTargetService(_config);
 
             ICameraProvider provider = new FfxivClientStructsCameraProvider();
@@ -92,6 +95,7 @@ namespace DelvUI.Interface.ActionCamera
                     _lockedModeActive = false;
                     _unlockReason = ActionCameraUnlockReason.None;
                     _pendingRelock = false;
+                    _pluginMouseCaptureFrames = 0;
                     _previousEnabledState = _config.Enabled;
                     SetActive(false);
                     _softTargetService.ClearAll();
@@ -106,6 +110,7 @@ namespace DelvUI.Interface.ActionCamera
                     _lockedModeActive = false;
                     _unlockReason = ActionCameraUnlockReason.Ui;
                     _pendingRelock = true;
+                    _pluginMouseCaptureFrames = 0;
                     SetActive(false);
                     _softTargetService.ClearAll();
                     _pendingDeltaX = 0f;
@@ -125,8 +130,9 @@ namespace DelvUI.Interface.ActionCamera
 
                 bool holdUnlockHeld = _inputManager.IsHoldUnlockActive();
                 bool gameUiFocused = _config.UnlockOnUi && _uiStateService.IsUiFocused;
-                bool pluginUiActive = _uiStateService.IsDalamudOrPluginUiActive;
-                bool uiFocused = gameUiFocused || pluginUiActive;
+                bool configOpen = _config.UnlockWhenConfigOpen && _uiStateService.IsAetherSettingsOpen;
+                bool pluginMouseCapture = _uiStateService.IsPluginMouseCaptureRequested;
+                bool uiFocused = gameUiFocused || configOpen || pluginMouseCapture;
                 bool togglePressed = _inputManager.ConsumeToggleUnlockPressed();
                 bool lockTargetPressed = _inputManager.ConsumeToggleLockTargetPressed();
                 _inputManager.ConsumeEscPressedEdge();
@@ -156,7 +162,7 @@ namespace DelvUI.Interface.ActionCamera
                     }
                 }
 
-                if (uiFocused || (_config.UnlockWhenConfigOpen && ConfigurationManager.Instance.IsConfigWindowOpened))
+                if (TryApplyUiUnlock(gameUiFocused, configOpen, pluginMouseCapture))
                 {
                     _lockedModeActive = false;
                     _unlockReason = ActionCameraUnlockReason.Ui;
@@ -266,6 +272,24 @@ namespace DelvUI.Interface.ActionCamera
                      Plugin.Condition[ConditionFlag.CreatingCharacter] ||
                      Plugin.Condition[ConditionFlag.BetweenAreas] ||
                      Plugin.Condition[ConditionFlag.BetweenAreas51]);
+        }
+
+        private bool TryApplyUiUnlock(bool gameUiFocused, bool configOpen, bool pluginMouseCapture)
+        {
+            if (gameUiFocused || configOpen)
+            {
+                _pluginMouseCaptureFrames = 0;
+                return true;
+            }
+
+            if (!pluginMouseCapture)
+            {
+                _pluginMouseCaptureFrames = 0;
+                return false;
+            }
+
+            _pluginMouseCaptureFrames++;
+            return _pluginMouseCaptureFrames >= PluginMouseCaptureUnlockFrames;
         }
 
         private void SetActive(bool shouldBeActive)

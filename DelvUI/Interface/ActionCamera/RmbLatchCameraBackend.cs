@@ -45,6 +45,7 @@ namespace DelvUI.Interface.ActionCamera
 
             MaintainLatchState();
 
+            // Tracks pseudo yaw/pitch for diagnostics while relying on RMB-latch for game camera behavior.
             _yaw += deltaX * 0.00425f;
             _pitch = Math.Clamp(_pitch - (deltaY * 0.00425f), -1.35f, 1.35f);
         }

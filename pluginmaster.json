@@ -3,7 +3,7 @@
     "Author": "Tischel, Aether UI Fork Maintainers",
     "Name": "Aether UI",
     "InternalName": "AetherUI",
-    "AssemblyVersion": "2.7.0.1",
+    "AssemblyVersion": "2.8.0.0",
     "Description": "A standalone customizable HUD with nameplate parity, action camera controls, and backend/profile stability improvements.",
     "Punchline": "Standalone customizable HUD with action camera parity.",
     "ApplicableVersion": "any",

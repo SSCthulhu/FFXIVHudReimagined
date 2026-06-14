@@ -2,7 +2,7 @@
   "Author": "Tischel, Aether UI Fork Maintainers",
   "Name": "Aether UI",
   "InternalName": "AetherUI",
-  "AssemblyVersion": "2.7.0.1",
+  "AssemblyVersion": "2.8.0.0",
   "Description": "Aether UI is focused on stable backend behavior and safe profile handling.",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/SSCthulhu/AetherUI",
